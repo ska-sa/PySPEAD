@@ -31,6 +31,7 @@ DEBUG = False
 
 FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'  # This must be explicit to bootstrap packing formats
 def mkfmt(*args): return pack(FORMAT_FMT, args)
+def parsefmt(fmt): return unpack(FORMAT_FMT, fmt, cnt=-1)
 DEFAULT_FMT = mkfmt(('u',ADDRSIZE))
 HDR_FMT = mkfmt(('u',8),('u',8),('u',8),('u',8),('u',16),('u',16))
 RAW_ITEM_FMT = mkfmt(('u',1),('u',ITEMSIZE-ADDRSIZE-1),('c',8),('c',8),('c',8),('c',8),('c',8))
@@ -177,7 +178,10 @@ class Descriptor:
         return pack(self.format, val)
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
-        val = unpack(self.format, s, cnt=self.size, offset=self._offset)
+        try:
+            val = unpack(self.format, s, cnt=self.size, offset=self._offset)
+        except(ValueError, e):
+            raise ValueError(e.msg() + 'Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
         if self.shape == -1 or len(self.shape) != 0:
             val = numpy.array(val)
             if self.shape != -1: val.shape = self.shape
@@ -388,7 +392,7 @@ def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
         # Pad out to ADDRLEN for bits < ADDRSIZE
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
-            items.append((IMMEDIATEADDR, id, unpack(DEFAULT_FMT, val)[0][0]))
+            items.append((IMMEDIATEADDR, id, unpack(DEFAULT_FMT, (ADDRNULL+val)[-ADDRLEN:])[0][0]))
     heap_pyld = ''.join(heap_pyld)
     heap_len, payload_cnt, offset = len(heap_pyld), 0, 0
     while True:
