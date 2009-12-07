@@ -1,0 +1,8 @@
+include scripts/*
+include src/*
+include tests/*.py
+include setup.py
+include LICENSE
+include LICENSE-GPL
+include doc/*.pdf
+include MANIFEST.in
