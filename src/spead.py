@@ -3,10 +3,13 @@ from struct import pack, unpack
 import logging
 import sys
 import time
+import socket
 
 logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger("spead")
+logger.setLevel(logging.WARNING)
 
+SPEAD_MAGIC = 0x4b52
 SPEAD_VERSION = 3
 MAX_PAYLOAD_SIZE = 9200
 
@@ -23,11 +26,15 @@ class SpeadOption(object):
     """A spead option object that stores the option and intrepreted value
        of the option. It also stores history of updated options...
     """
-    def __init__(self, id, value, descriptor = None):
+    def __init__(self, id, value, descriptor = None, raw_value = None):
         self.id = id
         self.value = value
         self._descriptor = descriptor
         self._history = {time.time(): value}
+        self._raw_history = {time.time(): raw_value}
+
+    def _add_raw_value(self, raw_value):
+        self._raw_history[time.time()] = raw_value
 
     def set_descriptor(self, descriptor):
         self._descriptor = descriptor
@@ -43,7 +50,7 @@ class SpeadDescriptor(object):
         self.name = name
         self.description = description
         self._unpack_defs = {}
-        self._unpack_list = ""
+        self._unpack_list = []
         self._count_string = pack("c","0") + pack("q",1)[:-2]
         self._count_reference = None
         self._assigned_id = 0
@@ -115,14 +122,70 @@ class SpeadDescriptor(object):
                 logger.error("Unpack type " + str(u) + " has not yet been defined for this payload.")
                 break
 
+class SpeadTransport(object):
+    """The basic spead transport object.
+    This writes data to stdout. Reads return the data that was last printed.
+    """
+    def __init__(self):
+        self._last_data = ""
+
+    def write(self, data):
+        print "SPEAD Write (",time.ctime(),",",len(data),"bytes)"
+        print repr(data)
+        self._last_data = data
+
+    def read(self):
+        return self._last_data
+
+
+class SpeadUDPTransport(object):
+    """An IP spead transport.
+    """
+    def __init__(self, send_ip = None, send_port = None, receive_port = None, recv_buffer_len=512000):
+        self._send_ip = send_ip
+        self._send_port = send_port
+        self._receive_port = receive_port
+        self._recv_buffer_len = recv_buffer_len
+        if send_ip is not None and send_port is not None:
+            self._init_send_socket()
+        if receive_port is not None:
+            self._init_receive_socket()
+
+    def _init_send_socket(self):
+        self._udp_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def _init_receive_socket(self):
+        self._udp_in = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            self._udp_in.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self._recv_buffer_len)
+        except:
+            logger.error("Failed to set requested receive buffer size of",self._recv_buffer_len,"bytes")
+        self._udp_in.bind(('', self._receive_port))
+        self._udp_in.setblocking(True)
+
+    def write(self, data):
+        self._udp_out.sendto(data, (self._send_ip, self._send_port))
+
+    def read(self, recv_len=9200):
+        data, self._last_receive_ip = self._udp_in.recvfrom(recv_len)
+        return data
+
 class SpeadStream(object):
     """All spead streams are instances of this object.
     It encapsulates all the meta information required to construct and send the data packets.
     A simple send method allows sending updated data to the stream destination.
+
+    Parameters
+    ----------
+    transport : SpeadTransport  
+        The transport to be used for sending packets
+    name : string
+        The display name for this stream
+    description : string
+        A description of the stream and it's purpose
     """
-    def __init__(self, destination_ip, destination_port, name, description):
-        self._destination_ip = destination_ip
-        self._destination_port = destination_port
+    def __init__(self, transport, name, description):
+        self._transport = transport
         self._name = name
         self._description = description
         self._meta_options = {}
@@ -158,7 +221,7 @@ class SpeadStream(object):
 
     def get_header(self, option_count):
         """Generate a wire ready packet header with the desired number of options set."""
-        return pack('HHHH',0x4b52,SPEAD_VERSION,0,option_count)
+        return pack('HHHH',SPEAD_MAGIC,SPEAD_VERSION,0,option_count)
 
     def build_stop_packet(self):
         """Create the stream stop packet."""
@@ -175,7 +238,7 @@ class SpeadStream(object):
          # stream start
         packet += pack('HHI',METADATA_PACKET_COUNTER_ID, 0, 2)
         for option in self._meta_options.itervalues():
-            packet += pack('H',option.id) + pack('q',option.value)[:2]
+            packet += pack('H',option.id) + pack('q',option.value)[:-2]
              # cheating for now by assuming unsigned long as option value
         self._meta_packets['start_packet'] = packet
 
@@ -213,22 +276,21 @@ class SpeadStream(object):
         self._meta_packets['payload_descriptor'] = packet
 
     def stop_stream(self):
-        print "Sending stop packet..."
+        logger.info("Sending stop packet...")
         self.send_packet(self._meta_packets['stop_packet'])
         self._stream_status = -1
 
     def start_stream(self):
-        print "Sending option descriptors..."
+        logger.info("Sending option descriptors...")
         self.send_packet(self._meta_packets['option_descriptor'])
-        print "Sending payload descriptors..."
+        logger.info("Sending payload descriptors...")
         self.send_packet(self._meta_packets['payload_descriptor'])
-        print "Sending start packet..."
+        logger.info("Sending start packet...")
         self.send_packet(self._meta_packets['start_packet'])
         self._stream_status = 0
 
     def send_packet(self, packet):
-        print repr(packet)
-        print
+        self._transport.write(packet)
 
     def format_data(self, data):
         pack_str = self.get_agg_pack()
@@ -288,17 +350,19 @@ class SpeadStream(object):
         offset = 0
         while len(wire) > MAX_PAYLOAD_SIZE:
             # handle data greater than a single packet
-            packet = self.get_header(2 + len(self._data_options))
+            packet = self.get_header(3 + len(self._data_options))
             packet += pack('HHI', DATA_PAYLOAD_LENGTH_ID, 0, MAX_PAYLOAD_SIZE)
             packet += pack('HHI', DATA_PAYLOAD_OFFSET_ID, 0, offset)
+            packet += pack('HHI', INSTRUMENT_TYPE_ID, 1, self._payload_descriptor._assigned_id)
             packet += wire[:MAX_PAYLOAD_SIZE]
             self.send_packet(packet)
             wire = wire[MAX_PAYLOAD_SIZE:]
             offset += MAX_PAYLOAD_SIZE
          # send remainder 
-        packet = self.get_header(2 + len(self._data_options))
+        packet = self.get_header(3 + len(self._data_options))
         packet += pack('HHI', DATA_PAYLOAD_LENGTH_ID, 0, len(wire))
         packet += pack('HHI', DATA_PAYLOAD_OFFSET_ID, 0, offset)
+        packet += pack('HHI', INSTRUMENT_TYPE_ID, 1, self._payload_descriptor._assigned_id)
         packet += wire
         self.send_packet(packet)
 
@@ -339,27 +403,105 @@ class SpeadStream(object):
 
 class SpeadReceiver(threading.Thread):
     """ A class to receive and decode SPEAD streams."""
-    def __init__(self, port, recv_buffer=512000):
-        self._port = port
-        self._recv_buffer = recv_buffer
+    def __init__(self, transport):
+        self._transport = transport
         self.options = {}
         self._options_unpack_str = {}
+        self._running = True
+        self._payload_descriptors = {}
+        self._option_descriptors = {}
+        self._options = {}
+        self._to_compile = {}
+        self._agg_unpack = {}
+         # stores the aggregated unpack strings for various payload id types
         threading.Thread.__init__(self)
 
     def stop(self):
         self._running = False
+
+    def compile_unpack(self, payload_id):
+        """Compile the unpack string for the supplied payload ID.
+        """
+        agg = self.calculate_aggregate_unpack(self._payload_descriptors[payload_id])
+        self._agg_unpack[payload_id] = agg
+
+    def calculate_aggregate_unpack(self, descriptor):
+        """Based on the current settings work out an aggregate, python compatible unpack string..."""
+        (u,c,n,d) = descriptor.get_compiled_descriptor().split('\n')
+        count_type = unpack('c',c[:1])[0]
+        if count_type == '0': count = unpack('q',c[1:] + "\x00\x00")[0]
+        else:
+            count_option_id = unpack('q',c[1:] + "\x00\x00")[0]
+            try:
+                count = self._options[count_option_id].value
+                logger.info("Unpack references option " + str(count_option_id) + " which has value " + str(count))
+            except KeyError:
+                logger.error("Payload descriptor references option id " + str(count_option_id) + " in the count field, but this option is not present in this stream.")
+                return
+        if len(u) % 3 != 0:
+            logger.error("Unpack string for descriptor is not a multiple of 24 bits.")
+            return
+        unpack_string = ""
+        for x in range(0,len(u),3):
+            unpack_type = unpack('c',u[x:x+3][:1])[0]
+            unpack_val = unpack('H',u[x:x+3][1:])[0]
+            if unpack_type == '0':
+                sd = self._payload_descriptors[unpack_val]
+                unpack_string += self.calculate_aggregate_unpack(sd)
+            else:
+                unpack_string += unpack_type
+                 # for the python sending case we assume the specified types are standard width, so we ignore the bit length field
+        return unpack_string * count
+
+
+    def compile_descriptors(self):
+        """Check through the registered descriptors and make sure that the internal links between the various
+        descriptors are sane.
+        """
+        for d in self._to_compile.itervalues():
+            for i, ref in enumerate(d._unpack_list):
+                if type(ref) == type(0):
+                    try:
+                        ref_d = self._payload_descriptors[ref]
+                        d._unpack_list[i] = ref_d
+                        logger.info("Reference to descriptor id " + str(ref_d) + " added.")
+                    except KeyError:
+                        logger.error("Option has a reference to descriptor id " + str(ref_d) + ", but this does not exist...")
+        self._to_compile = {}
+         # should check to make sure that compiles that failed do not get removed...
 
     def decode_descriptor(self, option_id, option_payload, payload):
         """The option is a descriptor and thus needs to be added to the interpretation table.
            This will need the packet data as well as the header...
         """
         (payload_id, index, length) = unpack("3H", option_payload)
-        logger.info("Received " + (option_id == OPTION_PAYLOAD_DESCRIPTOR and "payload" or "option") + " descriptor for id " + str(payload_id) + ". Descriptor string starts at offset " + str(index) + " and has length " + str(length))
+        logger.info("Received " + (option_id == PAYLOAD_DESCRIPTOR_ID and "payload" or "option") + " descriptor for id " + str(payload_id) + ". Descriptor string starts at offset " + str(index) + " and has length " + str(length))
         descriptor_parts = payload[index:index+length].split("\n")
         if len(descriptor_parts) == 4:
-            pass
+            d = SpeadDescriptor(descriptor_parts[2],descriptor_parts[3][:-1])
+            d._count_string = descriptor_parts[1]
+            d._assigned_id = payload_id
+            for u in [descriptor_parts[0][n*3:(n+1)*3] for n in range(len(descriptor_parts[0])/3)]:
+                utype = unpack('c',u[:1])[0]
+                if utype == '0':
+                    ref_id = unpack('H',u[1:])[0]
+                    d._unpack_list.append(ref_id)
+                    self._to_compile[payload_id] = d
+                     # for now we simply insert the desired payload ID reference as it may not have been parsed yet.
+                     # once the descriptors have been recieved a compile step will turn these references into SpeadDescriptors. 
+                else:
+                    d._unpack_list.append(u)
+            if option_id == PAYLOAD_DESCRIPTOR_ID:
+                self._payload_descriptors[payload_id] = d
+            else:
+                self._option_descriptors[payload_id] = d
+            logger.info("Added descriptor for ID " + str(payload_id) + " to receiver.")
         else:
             logger.warn("Descriptor string for id " + str(payload_id) + " is not well formed.")
+
+    def unpack_data(self, unpack_str, data):
+        logger.debug("Unpack string is: " + unpack_str)
+        logger.debug("Received: " + str(unpack(unpack_str, data)))
 
     def decode_option(self, option_id, option_payload, payload):
         """Decode and parse the given option.
@@ -367,17 +509,33 @@ class SpeadReceiver(threading.Thread):
            Option decoding may not be available at a given time...
         """
          # if option is a descriptor than decode otherly
-        if option_id == OPTION_PAYLOAD_DESCRIPTOR or option_id == OPTION_OPTION_DESCRIPTOR:
+        logger.info("Decoding option " + str(option_id) + " with payload " + repr(option_payload))
+        if option_id == OPTION_DESCRIPTOR_ID or option_id == PAYLOAD_DESCRIPTOR_ID:
             self.decode_descriptor(option_id, option_payload, payload)
-        else:
-            if self._options_unpack_str.has_key(option_id):
-                option_value = unpack(self._options_unpack_str[option_id], option_payload)
-                if self.options.has_key(option_id):
-                    self.options[option_id]._update_value(option_payload)
-                else:
-                    self.options = SpeadOption(option_id, option_payload)
+        elif option_id == INSTRUMENT_TYPE_ID:
+            instrument_type = unpack('H',option_payload[:2])[0]
+            payload_id = unpack('I',option_payload[2:])[0]
+            logger.info("Instrument type is " + str(instrument_type) + " with payload id " + str(payload_id))
+            # check if we know how to decode this payload id
+            if self._payload_descriptors.has_key(payload_id):
+                if not self._agg_unpack.has_key(payload_id):
+                    self.compile_unpack(payload_id)
+                self.unpack_data(self._agg_unpack[payload_id], payload)
             else:
-                logger.warn("Option " + str(option_id) + " has no registered unpack string.")
+                logger.error("Packet has payload id " + str(payload_id) + ", but this is not a registered type. Maybe the descriptor got lost...")
+        elif option_id == STREAM_CONTROL_ID:
+            control = unpack('I',option_payload[-4:])[0]
+            logger.info("Control packet is of type " + str(control))
+            if control == 2:
+                self._running = False
+                logger.info("Received stop packet. Halting receiver...")
+        else:
+            if self._options.has_key(option_id):
+                self._options[option_id]._add_raw_value(option_payload)
+            else:
+                 # temporary value for now. Will convert to actual value once option descriptors properly implemented
+                temp_value = unpack('q',option_payload + '\x00\x00')[0]
+                self._options[option_id] = SpeadOption(option_id, temp_value, raw_value=option_payload)
 
     def parse_header(self, packet):
         """
@@ -393,24 +551,22 @@ class SpeadReceiver(threading.Thread):
         """
         magic = unpack('2c',packet[:2])
         (version, reserved, option_count) = (0,0,0)
-        if magic == ('K','R') and len(packet) > 7:
+        if magic == ('R','K') and len(packet) > 7:
             (version, reserved, option_count) = unpack('3h', packet[2:8])
-            logger.info("SPEAD version " + str(version) + " packet with " + str(option_count) + " received.")
+            logger.info("SPEAD version " + str(version) + " packet with " + str(option_count) + " options received.")
             if option_count > 0:
-                req_length = 8 + (option_count + 1)
+                req_length = 8 * (option_count + 1)
                 if len(packet) >= req_length:
-                    for option, index in enumerate(packet[8:req_length:8]):
-                        option_id = unpack('h',option[:2])
-                        logger.info("Received option " + str(option_id))
+                    for option in [packet[n*8:(n+1)*8] for n in range(1,option_count + 1)]:
+                        option_id = unpack('H',option[:2])[0]
                         self.decode_option(option_id, option[2:], packet[req_length:])
                 else:
-                    logger.error("SPEAD header has invalid length. Received " + len(packet) + " bytes. Required " + str(req_length) + " bytes")
+                    logger.error("SPEAD header has invalid length. Received " + str(len(packet)) + " bytes. Required " + str(req_length) + " bytes")
         else:
             logger.error("Header is not valid SPEAD")
-            print "Invalid magic (" + str(magic) + "). Not a spead packet"
+        if len(self._to_compile) > 0:
+            self.compile_descriptors()
         return (version, reserved, option_count)
-
-
 
     def stats(self):
         print "Data rate (over last 10 packets):",self.data_rate
@@ -419,25 +575,21 @@ class SpeadReceiver(threading.Thread):
         print "Number of received frames:",self.packet_count
         print "Number of frames in storage:",(self.storage is None and "N/A" or self.storage._frame_count)
 
+
     def run(self):
-        """Main thread loop. Creates socket connection, handles incoming data and marshalls it into
-           the storage object.
+        """Main receiver loop for a SpeadReceiver instance.
+        Will handle all data and metadata for a specific socket. In general port number are used to scope the
+        namespace of a spead stream. i.e. all the descriptors and meta data packets on a particular socket are presumed to apply
+        to all data received on that particular socket. 
         """
-        udpIn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            udpIn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.recv_buffer)
-        except:
-            logger.error("Failed to set requested receive buffer size of",self.recv_buffer,"bytes")
-        udpIn.bind(('', self.port))
-        udpIn.setblocking(True)
         self.packet_count = 0
         d_start = 0
         while self._running:
             if self.packet_count % 10 == 0:
                 d_start = time.time()
-            data, self.last_ip = udpIn.recvfrom(9200)
-            if d_start > 0:
-                self.data_rate = int(len(data)*10 / (time.time() - d_start) / 1024)
-                self.process_time = (time.time() - d_start) * 100000
-                d_start = 0
-
+            packet = self._transport.read()
+            if len(packet) < 8:
+                logger.error("Invalid short packet received. (no header)")
+                continue
+            (spead_version, reserved, option_count) = self.parse_header(packet)
+            #self.parse_payload(packet)

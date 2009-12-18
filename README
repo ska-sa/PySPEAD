@@ -2,3 +2,5 @@ PySPEAD
 
 This is a fast and light Python implementation of the Streaming Protocol for the Exchange of Astronomical Data
 
+The test_corr_format.py script demonstrates creating a streamer and a receiver and performing a simple
+data exchange between the two.

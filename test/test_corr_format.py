@@ -1,8 +1,16 @@
 import random
 import spead
+import logging
+import time
+spead.logger.setLevel(logging.DEBUG)
+ # lets be a little verbose
+
 v = []
 for x in range(1536): v.append(int(random.random() * x))
  # create a little bit of data to send
+
+transport = spead.SpeadUDPTransport("127.0.0.1",50000,50000)
+ # create a back to back localhost UDP transport
 
 freq_count_descriptor = spead.SpeadDescriptor("freq_count","The total number of frequency channels present in any integration.")
 freq_count_descriptor.add_unpack_type('uint48','u',48)
@@ -39,7 +47,7 @@ freq.set_unpack_list(['baseline'])
 freq.set_count('1',freq_count)
  # create a frequency type
 
-s = spead.SpeadStream("127.0.0.1",5000,"test","A test spead stream.")
+s = spead.SpeadStream(transport,"test","A test spead stream.")
  # create a new spead stream to the specified destination. Giving a name and description.
 s.set_payload_descriptor(freq)
  # set the top level data type
@@ -64,6 +72,8 @@ s.build_stop_packet()
  # 4 - n-1) Data packets (payload + data options)
  # n) Stop packet
 
+rec = spead.SpeadReceiver(transport)
+rec.start()
 s.start_stream()
  # send the first three packets
 s.send_data(v)
@@ -71,3 +81,8 @@ s.send_data(v)
  # send some data
 s.stop_stream()
  # all done
+
+time.sleep(1)
+ # wait for packets to finish...
+raw_input("Hit enter to finish...")
+rec.stop()
