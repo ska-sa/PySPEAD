@@ -2,7 +2,7 @@
 from distutils.core import setup
 import os, glob
 
-__version__ = '0.0.1'
+__version__ = '0.0.1c'
 
 setup(name = 'spead',
     version = __version__,
