@@ -1,4 +1,4 @@
-import unittest, spead as S, bitstring, struct, sys, os
+import unittest, spead as S, bitstring, struct, sys, os, time, socket
 
 example_pkt = ''.join([
     S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 3),
@@ -8,10 +8,25 @@ example_pkt = ''.join([
         S.pack(S.PAYLOAD_CNTLEN_FMT, 0, 8)),
     struct.pack('>d', 3.1415)])
 
+term_pkt = ''.join([
+    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 2),
+    S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 0),
+    S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
+
 example_frame = {
     S.FRAME_CNT_ID: '\x00\x00\x00\x00\x00\x03',
     0x3333: struct.pack('>d', 3.1415)
 }
+
+class RawUDPrx:
+    def __init__(self, port, rx_buflen=8192):
+        self._udp_in = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._udp_in.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rx_buflen)
+        self._udp_in.bind(('', port))
+        self._udp_in.setblocking(True)
+    def read(self, recv_len=9200):
+        data, self._last_rx_ip = self._udp_in.recvfrom(recv_len)
+        return data
 
 class TestMethods(unittest.TestCase):
     def test_calcsize(self):
@@ -261,22 +276,29 @@ class TestItemGroup(unittest.TestCase):
         self.assertEqual(ig2['var2'], 15)
         self.assertEqual(ig2['var3'], 15.15)
 
-class TestTransportStringFile(unittest.TestCase):
+class TestTransportString(unittest.TestCase):
     def setUp(self):
-        self.t_str = S.TransportString('abcdefgh')
+        self.t_str = S.TransportString(example_pkt*5 + 'junk' + example_pkt*5, allow_junk=True)
+    def test_iterpackets(self):
+        pkts = [pkt for pkt in self.t_str.iterpackets()]
+        self.assertEqual(len(pkts), 10)
+
+class TestTransportFile(unittest.TestCase):
+    def setUp(self):
         self.filename1 = 'junkspeadtestfile1'
         self.filename2 = 'junkspeadtestfile2'
-        open(self.filename1,'w').write('abcdefgh')
+        open(self.filename1,'w').write(example_pkt*5000 + term_pkt)
         self.t_file1 = S.TransportFile(self.filename1)
         self.t_file2 = S.TransportFile(self.filename2, 'w')
-    def test_read(self):
-        self.assertEqual(self.t_str.read(4), 'abcd')
-        self.assertEqual(self.t_str.read(4), 'efgh')
-        self.assertEqual(self.t_file1.read(4), 'abcd')
-        self.assertEqual(self.t_file1.read(4), 'efgh')
+    def test_iterpackets(self):
+        pkts = [pkt for pkt in self.t_file1.iterpackets()]
+        self.assertEqual(len(pkts), 5000)
+    #def test_read(self):
+    #    self.assertEqual(self.t_str.read(4), 'abcd')
+    #    self.assertEqual(self.t_str.read(4), 'efgh')
+    #    self.assertEqual(self.t_file1.read(4), 'abcd')
+    #    self.assertEqual(self.t_file1.read(4), 'efgh')
     def test_write(self):
-        def f(s): self.t_str.write(s)
-        self.assertRaises(AttributeError, f, 'abcd')
         self.assertRaises(IOError, self.t_file1.write, 'abcd')
         self.t_file2.write('abcd')
     def tearDown(self):
@@ -287,10 +309,10 @@ class TestTransportStringFile(unittest.TestCase):
         try: os.remove(self.filename2)
         except(OSError): pass
 
-class TestTransportUDP(unittest.TestCase):
+class TestTransportUDPtx(unittest.TestCase):
     def setUp(self):
-        self.t_tx = S.TransportUDP(tx_ip='127.0.0.1', port=50000, mode='w')
-        self.t_rx = S.TransportUDP(port=50000, mode='r')
+        self.t_tx = S.TransportUDPtx(ip='127.0.0.1', port=50000)
+        self.t_rx = RawUDPrx(port=50000)
     def test_read_write(self):
         self.t_tx.write('abcd')
         self.assertEqual(self.t_rx.read(4), 'abcd')
@@ -298,6 +320,23 @@ class TestTransportUDP(unittest.TestCase):
         self.assertRaises(AttributeError, f)
         def f(): self.t_tx.read(4)
         self.assertRaises(AttributeError, f)
+
+class TestTransportUDPrx(unittest.TestCase):
+    def setUp(self):
+        self.t_tx = S.TransportUDPtx(ip='127.0.0.1', port=50000)
+    def test_get_packets_term(self):
+        t_rx = S.TransportUDPrx(50000)
+        self.t_tx.write(example_pkt)
+        self.t_tx.write(example_pkt)
+        time.sleep(.001)
+        self.assertTrue(t_rx.is_running())
+        self.t_tx.write(term_pkt)
+        time.sleep(.001)
+        self.assertFalse(t_rx.is_running())
+        self.assertEqual(len(t_rx.pkts), 2)
+        pkts = [pkt for pkt in t_rx.iterpackets()]
+        self.assertEqual(len(pkts), 2)
+        self.assertFalse(t_rx.is_running())
 
 class TestTransmitter(unittest.TestCase):
     def setUp(self):
@@ -320,7 +359,7 @@ class TestTransmitter(unittest.TestCase):
         try: os.remove(self.filename)
         except(OSError): pass
 
-class TestReceiver(unittest.TestCase):
+class Testiterframes(unittest.TestCase):
     def setUp(self):
         self.filename = 'junkspeadtestfile'
         ig = S.ItemGroup()
@@ -329,12 +368,12 @@ class TestReceiver(unittest.TestCase):
         tx = S.Transmitter(S.TransportFile(self.filename,'w'))
         tx.send_frame(ig.get_frame())
         tx.end()
-        self.rx = S.Receiver(S.TransportFile(self.filename,'r'))
+        self.rx_tport = S.TransportFile(self.filename,'r')
     def tearDown(self):
         try: os.remove(self.filename)
         except(OSError): pass
     def test_iterframes(self):
-        frames = [f for f in self.rx.iterframes()]
+        frames = [f for f in S.iterframes(self.rx_tport)]
         self.assertEqual(len(frames), 1)
         frame = frames[0]
         ig = S.ItemGroup()

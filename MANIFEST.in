@@ -1,5 +1,7 @@
 include scripts/*
 include src/*
+include src/_spead/*.cpp
+include src/_spead/include/*.h
 include tests/*.py
 include setup.py
 include LICENSE

@@ -1,14 +1,10 @@
-import numpy, spead, os, logging
-
-logging.basicConfig(level=logging.DEBUG)
-
-FILENAME = 'junkspeadfile'
+import numpy, spead, os, logging, sys
 
 def receive():
     print 'RX: Initializing...'
-    rx = spead.Receiver(spead.Transport(from_file=open(FILENAME,'r')))
+    t = spead.TransportFile(sys.stdin)
     ig = spead.ItemGroup()
-    for frame in rx.iterframes():
+    for frame in spead.iterframes(t):
         ig.update(frame)
         print 'Got frame:', ig.frame_cnt
         for name in ig.keys():
@@ -21,23 +17,25 @@ def receive():
     print 'RX: Done.'
 
 def transmit():
-    print 'TX: Initializing...'
-    tx = spead.Transmitter(spead.Transport(from_file=open(FILENAME,'w')))
+    #print 'TX: Initializing...'
+    tx = spead.Transmitter(spead.TransportFile(sys.stdout))
     ig = spead.ItemGroup()
-    ig.add_item(name='Var1', description='Desciption for Var1',
+    ig.add_item(name='Var1', description='Description for Var1',
         shape=[], fmt=(('u',16),('u',16),('u',16)), init_val=(1,2,3))
     tx.send_frame(ig.get_frame())
     ig['Var1'] = (4,5,6)
     tx.send_frame(ig.get_frame())
-    ig.add_item(name='Var2', description='Desciption for Var2',
+    ig.add_item(name='Var2', description='Description for Var2',
         shape=[100,100], fmt=[('u',16)])
     data = numpy.arange(100*100); data.shape = (100,100)
     ig['Var2'] = data
     tx.send_frame(ig.get_frame())
     tx.end()
-    print 'TX: Done.'
+    #print 'TX: Done.'
 
-transmit()
-receive()
-os.remove(FILENAME)
+if sys.argv[-1] == 'tx': transmit()
+elif sys.argv[-1] == 'rx':
+    logging.basicConfig(level=logging.INFO)
+    receive()
+else: raise ValueError('Argument must be rx or tx')
 
