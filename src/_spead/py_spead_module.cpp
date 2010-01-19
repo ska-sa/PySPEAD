@@ -268,7 +268,6 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     // Deviously steal the references to items and payload from this pkt!
     pkto->pkt.items = pkt->items;
     pkto->pkt.payload = pkt->payload;
-    //spead_free_packet(pkt);  // Clears out the packet so that only we can free items and payload
     spead_init_packet(pkt);  // Clears out the packet so that only we can free items and payload
     arglist = Py_BuildValue("(O)", (PyObject *)pkto);
     // Call the python callback with the wrapped-up SpeadPacket
@@ -284,52 +283,20 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     return 0;
 }
 
-/*
-int bs_collatebuffer_callback(char *data, size_t size, void *userdata) {
-    CollateBuffer *cb;
-    CorrPacket pkt;
-    cb = (CollateBuffer *) userdata;
-    //printf("in bs_collatebuffer_callback: size=%d\n", size);
-    init_packet(&pkt);
-    try {
-        unpack(&pkt, data);
-    } catch (PacketError &e) {
-        fprintf(stderr, e.get_message());
-        return 1;
-    }
-    //printf("packet accepted: pkt->preverr=%ld\n", pkt.preverr);
-    return collate_packet(cb, pkt);
-}
-*/
-
 // Routine for setting a python callback for BufferSocket data output
 static PyObject * BsockObject_set_callback(BsockObject *self, PyObject *args){
     PyObject *cbk;
-    /*
-    ColBufObject *cbo;
-    if (PyArg_ParseTuple(args, "O!", &ColBufType, &cbo)) {
-        if (self->pycallback != NULL) Py_DECREF(self->pycallback);
-        Py_INCREF(cbo);
-        self->pycallback = (PyObject *)cbo;
-        self->bs.userdata = (void *)&(cbo->cb);
-        set_callback(&self->bs, &bs_collatebuffer_callback);
-    */
-    if (0) {
-    } else {
-        PyErr_Clear();
-        if (!PyArg_ParseTuple(args, "O", &cbk))
-            return NULL;
-
-        if (!PyCallable_Check(cbk)) {
-            PyErr_SetString(PyExc_TypeError, "parameter must be callable");
-            return NULL;
-        }
-        Py_INCREF(cbk);
-        if (self->pycallback != NULL) Py_DECREF(self->pycallback);
-        self->bs.userdata = (void *)self;
-        self->pycallback = cbk;
-        set_callback(&self->bs, &wrap_bs_pycallback);
+    PyErr_Clear();
+    if (!PyArg_ParseTuple(args, "O", &cbk)) return NULL;
+    if (!PyCallable_Check(cbk)) {
+        PyErr_SetString(PyExc_TypeError, "parameter must be callable");
+        return NULL;
     }
+    Py_INCREF(cbk);
+    if (self->pycallback != NULL) Py_DECREF(self->pycallback);
+    self->bs.userdata = (void *)self;
+    self->pycallback = cbk;
+    set_callback(&self->bs, &wrap_bs_pycallback);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -426,18 +393,13 @@ static PyMethodDef spead_methods[] = {
 PyMODINIT_FUNC init_spead(void) {
     PyObject* m;
     SpeadPktType.tp_new = PyType_GenericNew;
-    //ColBufType.tp_new = PyType_GenericNew;
     BsockType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&SpeadPktType) < 0) return;
-    //if (PyType_Ready(&ColBufType) < 0) return;
     if (PyType_Ready(&BsockType) < 0) return;
     m = Py_InitModule3("_spead", spead_methods,
-    "A module for handling low-level (high performance) packet manipulation.");
-    //import_array();
+    "A module for handling low-level (high performance) SPEAD packet manipulation.");
     Py_INCREF(&BsockType);
     PyModule_AddObject(m, "BufferSocket", (PyObject *)&BsockType);
-    //Py_INCREF(&ColBufType);
-    //PyModule_AddObject(m, "CollateBuffer", (PyObject *)&ColBufType);
     Py_INCREF(&SpeadPktType);
     PyModule_AddObject(m, "SpeadPacket", (PyObject *)&SpeadPktType);
 }

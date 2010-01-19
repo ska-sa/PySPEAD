@@ -1,5 +1,5 @@
-#ifndef BUFFFER_SOCKET_OBJ_H
-#define BUFFFER_SOCKET_OBJ_H
+#ifndef PY_BUFFFER_SOCKET_H
+#define PY_BUFFFER_SOCKET_H
 
 #include <stdio.h>
 #include <stdlib.h>
