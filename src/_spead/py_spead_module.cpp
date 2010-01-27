@@ -10,7 +10,7 @@
 // Deallocate memory when Python object is deleted
 static void SpeadPktObj_dealloc(SpeadPktObj* self) {
     //PyObject_GC_UnTrack(self);
-    spead_free_packet(&(self->pkt));
+    spead_packet_wipe(&self->pkt);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -24,116 +24,139 @@ static PyObject *SpeadPktObj_new(PyTypeObject *type,
 
 // Initialize object (__init__)
 static int SpeadPktObj_init(SpeadPktObj *self) {
-    spead_init_packet(&(self->pkt));
+    spead_packet_init(&self->pkt);
     return 0;
 }
 
 // Unpack header from a string
-PyObject *SpeadPktObj_unpack_hdr(SpeadPktObj *self, PyObject *args) {
+PyObject *SpeadPktObj_unpack_header(SpeadPktObj *self, PyObject *args) {
     char *data;
-    int size;
+    int64_t size;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
-    if (size < 8) {
-        PyErr_Format(PyExc_ValueError, "len(data) < 8");
+    if (size < SPEAD_ITEM_BYTES) {
+        PyErr_Format(PyExc_ValueError, "len(data) < %d", SPEAD_ITEM_BYTES);
         return NULL;
     }
-    size = spead_unpack_hdr(&self->pkt, data);
-    if (size < 0) {
+    size = spead_packet_unpack_header(&self->pkt, data);
+    if (size == SPEAD_ERR) {
         PyErr_Format(PyExc_ValueError, "data does not represent a SPEAD packet");
         return NULL;
     }
-    return Py_BuildValue("i", size);
+    return Py_BuildValue("l", size);
 }
 
 // Unpack items from a string
 PyObject *SpeadPktObj_unpack_items(SpeadPktObj *self, PyObject *args) {
     char *data;
-    int size;
+    int64_t size;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
     if (size < self->pkt.n_items * SPEAD_ITEM_BYTES) {
-        PyErr_Format(PyExc_ValueError, "len(data) < %d", self->pkt.n_items*8);
+        PyErr_Format(PyExc_ValueError, "len(data) < %d", self->pkt.n_items*SPEAD_ITEM_BYTES);
         return NULL;
     }
-    size = spead_unpack_items(&self->pkt, data);
-    return Py_BuildValue("i", size);
+    size = spead_packet_unpack_items(&self->pkt, data);
+    if (size == SPEAD_ERR) {
+        PyErr_Format(PyExc_MemoryError, "in SpeadPacket.unpack_items()");
+        return NULL;
+    }
+    return Py_BuildValue("l", size);
 }
 
 // Unpack payload from a string
 PyObject *SpeadPktObj_unpack_payload(SpeadPktObj *self, PyObject *args) {
     char *data;
-    int size;
+    int64_t size;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
-    if (size < self->pkt.payload_len) {
-        PyErr_Format(PyExc_ValueError, "len(data) < %d", self->pkt.payload_len);
+    if (self->pkt.payload == NULL) {
+        PyErr_Format(PyExc_RuntimeError, "SpeadPacket not initialized with PAYLOAD_LENGTH");
+        return NULL;
+    } else if (size < self->pkt.payload->length) {
+        PyErr_Format(PyExc_ValueError, "len(data) < %d", self->pkt.payload->length);
         return NULL;
     }
-    size = spead_unpack_payload(&self->pkt, data);
-    return Py_BuildValue("i", size);
+    size = spead_packet_unpack_payload(&self->pkt, data);
+    if (size == SPEAD_ERR) {
+        PyErr_Format(PyExc_MemoryError, "in SpeadPacket.unpack_payload()");
+        return NULL;
+    }
+    return Py_BuildValue("l", size);
 }
 
 // Unpack all from a string
 PyObject *SpeadPktObj_unpack(SpeadPktObj *self, PyObject *args) {
     char *data;
-    int size, off, ok=0;
+    int64_t size, off, val;
+    int flag=1;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
     if (size >= SPEAD_ITEM_BYTES) {
-        off = spead_unpack_hdr(&self->pkt, data);
+        off = spead_packet_unpack_header(&self->pkt, data);
+        if (off == SPEAD_ERR) {
+            PyErr_Format(PyExc_ValueError, "data does not represent a SPEAD packet");
+            return NULL;
+        }
         if (size >= off + self->pkt.n_items * SPEAD_ITEM_BYTES) {
-            off += spead_unpack_items(&self->pkt, data+off);
-            if (size >= off + self->pkt.payload_len) {
-                off += spead_unpack_payload(&self->pkt, data+off);
-                ok = 1;
+            val = spead_packet_unpack_items(&self->pkt, data+off);
+            if (val == SPEAD_ERR) {
+                PyErr_Format(PyExc_MemoryError, "in SpeadPacket.unpack()");
+                return NULL;
+            } else if (self->pkt.payload == NULL) {
+                PyErr_Format(PyExc_RuntimeError, "SpeadPacket not initialized with PAYLOAD_LENGTH");
+                return NULL;
+            }
+            off += val;
+            if (size >= off + self->pkt.payload->length) {
+                val = spead_packet_unpack_payload(&self->pkt, data+off);
+                if (val == SPEAD_ERR) {
+                    PyErr_Format(PyExc_MemoryError, "in SpeadPacket.unpack()");
+                    return NULL;
+                }
+                off += val;
+                flag = 0;
             }
         }
     }
-    if (!ok) {
-        PyErr_Format(PyExc_ValueError, "unpack failed");
+    if (flag) {
+        PyErr_Format(PyExc_ValueError, "Insufficient data to unpack packet");
         return NULL;
     }
-    return Py_BuildValue("i", off);
+    return Py_BuildValue("l", off);
 }
 
 // Get packet payload
 PyObject *SpeadPktObj_get_payload(SpeadPktObj *self) {
-    if (self->pkt.payload_len == 0) {
+    if (self->pkt.payload == NULL || self->pkt.payload->length == 0) {
         return Py_BuildValue("s", "");
     } else {
-        return Py_BuildValue("s#", self->pkt.payload, self->pkt.payload_len);
+        return Py_BuildValue("s#", self->pkt.payload->data, self->pkt.payload->length);
     }
 }
 
 // Get packet items
-PyObject *SpeadPktObj_get_items(SpeadPktObj *self) {
+PyObject *SpeadPktObj_get_rawitems(SpeadPktObj *self) {
     PyObject *tup=PyTuple_New(self->pkt.n_items);
     int i;
     for (i=0; i < self->pkt.n_items; i++) {
         //printf("get_items,item%d: is_ext=%d, id=%d, val=%d\n", i, self->pkt.items[i].is_ext,
         //    self->pkt.items[i].id, self->pkt.items[i].val);
-        if (self->pkt.items[i].is_ext) {
-            PyTuple_SET_ITEM(tup, i, 
-                Py_BuildValue("(ii(ii))", self->pkt.items[i].is_ext, self->pkt.items[i].id,
-                (self->pkt.items[i].val >> 24) & 0xFFFFFF, (self->pkt.items[i].val >> 0) & 0xFFFFFF));
-        } else {
-            PyTuple_SET_ITEM(tup, i, 
-                Py_BuildValue("(iil)", self->pkt.items[i].is_ext, self->pkt.items[i].id,
-                self->pkt.items[i].val));
-        }
+        PyTuple_SET_ITEM(tup, i, 
+            Py_BuildValue("(iil)", self->pkt.raw_items[i].is_ext, self->pkt.raw_items[i].id,
+            self->pkt.raw_items[i].val));
     }
     return tup;
 }
 
 // Bind methods to object
 static PyMethodDef SpeadPktObj_methods[] = {
-    {"get_items", (PyCFunction)SpeadPktObj_get_items, METH_NOARGS,
-        "get_items()\nReturn a tuple of (is_ext,id,val) items in the header of this packet, where val is (off,len) for an extension item or a 48b unsigned integer value otherwise."},
+    {"get_items", (PyCFunction)SpeadPktObj_get_rawitems, METH_NOARGS,
+        "get_rawitems()\nReturn a tuple of (is_ext,id,val) raw items in the header of this packet."},
     //{"set_items", (PyCFunction)SpeadPktObj_set_payload, METH_VARARGS,
     //    "set_items()\nSet the raw items in the header of this packet."},
     {"get_payload", (PyCFunction)SpeadPktObj_get_payload, METH_NOARGS,
         "get_payload()\nReturn the payload of this packet."},
     //{"set_payload", (PyCFunction)SpeadPktObj_set_payload, METH_VARARGS,
     //    "set_payload()\nSet the payload of this packet to a binary string."},
-    {"unpack_hdr", (PyCFunction)SpeadPktObj_unpack_hdr, METH_VARARGS,
-        "unpack_hdr(data)\nSet packet header from binary string. Raise ValueError if data doesn't match packet format.  Otherwise, return # bytes read."},
+    {"unpack_header", (PyCFunction)SpeadPktObj_unpack_header, METH_VARARGS,
+        "unpack_header(data)\nSet packet header from binary string. Raise ValueError if data doesn't match packet format.  Otherwise, return # bytes read."},
     {"unpack_items", (PyCFunction)SpeadPktObj_unpack_items, METH_VARARGS,
         "unpack_items(data)\nSet packet items from binary string. Raise ValueError if insufficient data.  Otherwise, return # bytes read."},
     {"unpack_payload", (PyCFunction)SpeadPktObj_unpack_payload, METH_VARARGS,
@@ -148,12 +171,8 @@ static PyMethodDef SpeadPktObj_methods[] = {
 static PyMemberDef SpeadPktObj_members[] = {
     {"n_items", T_USHORT, offsetof(SpeadPktObj, pkt) +
         offsetof(SpeadPacket, n_items), 0, "n_items"},
-    {"frame_cnt", T_ULONG, offsetof(SpeadPktObj, pkt) +
+    {"frame_cnt", T_LONG, offsetof(SpeadPktObj, pkt) +
         offsetof(SpeadPacket, frame_cnt), 0, "frame_cnt"},
-    {"payload_cnt", T_UINT, offsetof(SpeadPktObj, pkt) +
-        offsetof(SpeadPacket, payload_cnt), 0, "payload_cnt"},
-    {"payload_len", T_UINT, offsetof(SpeadPktObj, pkt) +
-        offsetof(SpeadPacket, payload_len), 0, "payload_len"},
     {NULL}  /* Sentinel */
 };
 
@@ -199,6 +218,158 @@ PyTypeObject SpeadPktType = {
     SpeadPktObj_new,       /* tp_new */
 };
 
+/*___                       _ _____                         
+/ ___| _ __   ___  __ _  __| |  ___| __ __ _ _ __ ___   ___ 
+\___ \| '_ \ / _ \/ _` |/ _` | |_ | '__/ _` | '_ ` _ \ / _ \
+ ___) | |_) |  __/ (_| | (_| |  _|| | | (_| | | | | | |  __/
+|____/| .__/ \___|\__,_|\__,_|_|  |_|  \__,_|_| |_| |_|\___|
+      |_|                                                   */
+
+// Deallocate memory when Python object is deleted
+static void SpeadFrameObj_dealloc(SpeadFrameObj* self) {
+    //PyObject_GC_UnTrack(self);
+    spead_frame_wipe(&self->frame);
+    self->ob_type->tp_free((PyObject*)self);
+}
+
+// Allocate memory for Python object 
+static PyObject *SpeadFrameObj_new(PyTypeObject *type,
+        PyObject *args, PyObject *kwds) {
+    SpeadFrameObj *self;
+    self = (SpeadFrameObj *) type->tp_alloc(type, 0);
+    return (PyObject *) self;
+}
+
+// Initialize object (__init__)
+static int SpeadFrameObj_init(SpeadFrameObj *self) {
+    spead_frame_init(&self->frame);
+    return 0;
+}
+
+// Add a packet to the frame
+PyObject *SpeadFrameObj_add_packet(SpeadFrameObj *self, PyObject *args) {
+    SpeadPktObj *pkto;
+    SpeadPacket *pkt;
+    if (!PyArg_ParseTuple(args, "O!", &SpeadPktType, &pkto)) return NULL;
+    pkt = spead_packet_clone(&pkto->pkt);  // Clone packet b/c Python need to keep the original
+    if (pkt == NULL) {
+        PyErr_Format(PyExc_MemoryError, "Could not copy SpeadPacket");
+        return NULL;
+    } else if (spead_frame_add_packet(&self->frame, pkt) == SPEAD_ERR) {
+        // Clean up cloned packet--we didn't use it
+        spead_packet_wipe(pkt);
+        free(pkt);
+        PyErr_Format(PyExc_ValueError, "SpeadPacket not part of frame, or it is incorrectly initialized");
+        return NULL;
+    }
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// Add a packet to the frame
+PyObject *SpeadFrameObj_finalize(SpeadFrameObj *self) {
+    if (spead_frame_finalize(&self->frame) == SPEAD_ERR) {
+        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.finalize()");
+        return NULL;
+    }
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// Get the final items from a frame
+PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
+    int result;
+    SpeadItem *item;
+    PyObject *rv;
+    if (self->frame.head_item == NULL) {
+        PyErr_Format(PyExc_RuntimeError, "SpeadFrame was not finalized before SpeadFrame.get_items() was called");
+        return NULL;
+    }
+    rv = PyDict_New();
+    if (rv == NULL) {
+        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.finalize()");
+        return NULL;
+    }
+    item = self->frame.head_item;
+    while (item != NULL) {
+        if (item->is_valid) {
+            if (item->length == 0) {
+                result = PyDict_SetItem(rv, PyInt_FromLong(item->id), PyString_FromString(""));
+            } else {
+                result = PyDict_SetItem(rv, PyInt_FromLong(item->id), 
+                    PyString_FromStringAndSize(item->val,item->length));
+            }
+            if (result == -1) {
+                PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.get_items()");
+                return NULL;
+            }
+        }
+        item = item->next;
+    }
+    return rv;
+}
+
+// Bind methods to object
+static PyMethodDef SpeadFrameObj_methods[] = {
+    {"add_packet", (PyCFunction)SpeadFrameObj_add_packet, METH_VARARGS,
+        "add_packet(SpeadPacket)\nAdd SpeadPacket to this frame.  A fresh SpeadFrame will accept packets with any FRAME_CNT, but thereafter will only accept ones with the same FRAME_CNT.  Raise ValueError on failure."},
+    {"finalize", (PyCFunction)SpeadFrameObj_finalize, METH_NOARGS,
+        "finalize()\nTry to finalize the values of all items in this frame.  Check SpeadFrame.is_valid to see if all values were able to be finalized."},
+    {"get_items", (PyCFunction)SpeadFrameObj_get_items, METH_NOARGS,
+        "get_items()\nReturn a dictionary of id:value pairs for all valid items in a finalized frame."},
+    {NULL}  // Sentinel
+};
+
+static PyMemberDef SpeadFrameObj_members[] = {
+    {"frame_cnt", T_LONG, offsetof(SpeadFrameObj, frame) +
+        offsetof(SpeadFrame, frame_cnt), 0, "frame_cnt"},
+    {"is_valid", T_BOOL, offsetof(SpeadFrameObj, frame) +
+        offsetof(SpeadFrame, is_valid), 0, "is_valid"},
+    {NULL}  /* Sentinel */
+};
+
+PyTypeObject SpeadFrameType = {
+    PyObject_HEAD_INIT(NULL)
+    0,                         /*ob_size*/
+    "SpeadFrame", /*tp_name*/
+    sizeof(SpeadFrameObj), /*tp_basicsize*/
+    0,                         /*tp_itemsize*/
+    (destructor)SpeadFrameObj_dealloc, /*tp_dealloc*/
+    0,                         /*tp_print*/
+    0,                         /*tp_getattr*/
+    0,                         /*tp_setattr*/
+    0,                         /*tp_compare*/
+    0,                         /*tp_repr*/
+    0,                         /*tp_as_number*/
+    0,                         /*tp_as_sequence*/
+    0,                         /*tp_as_mapping*/
+    0,                         /*tp_hash */
+    0,                         /*tp_call*/
+    0,                         /*tp_str*/
+    0,                         /*tp_getattro*/
+    0,                         /*tp_setattro*/
+    0,                         /*tp_as_buffer*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,        /*tp_flags*/
+    "This class provides a basic interface for examining Spead frames.  SpeadFrame()",       /* tp_doc */
+    0,                     /* tp_traverse */
+    0,                     /* tp_clear */
+    0,                     /* tp_richcompare */
+    0,                     /* tp_weaklistoffset */
+    0,                     /* tp_iter */
+    0,                     /* tp_iternext */
+    SpeadFrameObj_methods,     /* tp_methods */
+    SpeadFrameObj_members,     /* tp_members */
+    0,                         /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    (initproc)SpeadFrameObj_init,      /* tp_init */
+    0,                         /* tp_alloc */
+    SpeadFrameObj_new,       /* tp_new */
+};
+
 /*___         __  __           ____             _        _   
 | __ ) _   _ / _|/ _| ___ _ __/ ___|  ___   ___| | _____| |_ 
 |  _ \| | | | |_| |_ / _ \ '__\___ \ / _ \ / __| |/ / _ \ __|
@@ -207,7 +378,7 @@ PyTypeObject SpeadPktType = {
 
 // Deallocate memory when Python object is deleted
 static void BsockObject_dealloc(BsockObject* self) {
-    free_buffer_socket(&self->bs);
+    buffer_socket_wipe(&self->bs);
     if (self->pycallback) Py_DECREF(self->pycallback);
     self->ob_type->tp_free((PyObject*)self);
 }
@@ -226,7 +397,7 @@ static int BsockObject_init(BsockObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"pkt_count", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"|i", kwlist, &pkt_count))
         return -1;
-    init_buffer_socket(&self->bs, pkt_count);
+    buffer_socket_init(&self->bs, pkt_count);
     self->pycallback = NULL;
     return 0;
 }
@@ -235,7 +406,7 @@ static PyObject * BsockObject_start(BsockObject *self, PyObject *args) {
     int port;
     if (!PyArg_ParseTuple(args, "i", &port)) return NULL;
     PyEval_InitThreads();
-    start(&self->bs, port);
+    buffer_socket_start(&self->bs, port);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -244,7 +415,7 @@ static PyObject * BsockObject_stop(BsockObject *self) {
     //PyThreadState *_save;
     // Release Python Global Interpreter Lock so that a python callback end
     Py_BEGIN_ALLOW_THREADS
-    stop(&(self->bs));
+    buffer_socket_stop(&(self->bs));
     // Reacquire Python Global Interpreter Lock
     Py_END_ALLOW_THREADS
     Py_INCREF(Py_None);
@@ -263,12 +434,10 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     pkto = PyObject_New(SpeadPktObj, &SpeadPktType);
     pkto->pkt.n_items = pkt->n_items;
     pkto->pkt.frame_cnt = pkt->frame_cnt;
-    pkto->pkt.payload_len = pkt->payload_len;
-    pkto->pkt.payload_cnt = pkt->payload_cnt;
     // Deviously steal the references to items and payload from this pkt!
-    pkto->pkt.items = pkt->items;
+    pkto->pkt.raw_items = pkt->raw_items;
     pkto->pkt.payload = pkt->payload;
-    spead_init_packet(pkt);  // Clears out the packet so that only we can free items and payload
+    spead_packet_init(pkt);  // Clears out the packet so that only we can free items and payload
     arglist = Py_BuildValue("(O)", (PyObject *)pkto);
     // Call the python callback with the wrapped-up SpeadPacket
     rv = PyEval_CallObject(bso->pycallback, arglist);
@@ -296,14 +465,14 @@ static PyObject * BsockObject_set_callback(BsockObject *self, PyObject *args){
     if (self->pycallback != NULL) Py_DECREF(self->pycallback);
     self->bs.userdata = (void *)self;
     self->pycallback = cbk;
-    set_callback(&self->bs, &wrap_bs_pycallback);
+    buffer_socket_set_callback(&self->bs, &wrap_bs_pycallback);
     Py_INCREF(Py_None);
     return Py_None;
 }
 
 // Routine for removing a python callback for data output
 static PyObject * BsockObject_unset_callback(BsockObject *self) {
-    set_callback(&self->bs, &default_callback);
+    buffer_socket_set_callback(&self->bs, &default_callback);
     if (self->pycallback != NULL) Py_DECREF(self->pycallback);
     self->pycallback = NULL;
     self->bs.userdata = NULL;
@@ -395,11 +564,14 @@ PyMODINIT_FUNC init_spead(void) {
     SpeadPktType.tp_new = PyType_GenericNew;
     BsockType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&SpeadPktType) < 0) return;
+    if (PyType_Ready(&SpeadFrameType) < 0) return;
     if (PyType_Ready(&BsockType) < 0) return;
     m = Py_InitModule3("_spead", spead_methods,
     "A module for handling low-level (high performance) SPEAD packet manipulation.");
     Py_INCREF(&BsockType);
     PyModule_AddObject(m, "BufferSocket", (PyObject *)&BsockType);
+    Py_INCREF(&SpeadFrameType);
+    PyModule_AddObject(m, "SpeadFrame", (PyObject *)&SpeadFrameType);
     Py_INCREF(&SpeadPktType);
     PyModule_AddObject(m, "SpeadPacket", (PyObject *)&SpeadPktType);
 }

@@ -17,43 +17,90 @@
 #endif
 
 // Constants
-#define SPEAD_MAGIC                 0x4b52
+#define SPEAD_MAGIC                 0x4b5254
 #define SPEAD_VERSION               3
-#define SPEAD_RESERVED              0
 
 #define SPEAD_FRAME_CNT_ID          0x01
-#define SPEAD_PAYLOAD_CNTLEN_ID     0x02
-#define SPEAD_HEAP_LENOFF_ID        0x03
+#define SPEAD_PAYLOAD_OFFSET_ID     0x02
+#define SPEAD_PAYLOAD_LENGTH_ID     0x03
 #define SPEAD_STREAM_CTRL_ID        0x05
 
 #define SPEAD_STREAM_CTRL_TERM_VAL  0x02
 
 #define SPEAD_ITEM_BYTES            8
+#define SPEAD_ITEM_VAL_BYTES        5
 #define SPEAD_MAX_PACKET_SIZE       9200
 
-// Objects
+#define SPEAD_ERR                   -1
 
+// Macros
+#define SPEAD_GET_MAGIC(hdr) (0xFFFFFF & (hdr >> 40))
+#define SPEAD_GET_VERSION(hdr) (0xFF & (hdr >> 32))
+#define SPEAD_GET_NITEMS(hdr) ((int) 0x7FFFFFFF & hdr)
+
+#define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + n * SPEAD_ITEM_BYTES))[0]))
+#define SPEAD_ITEM_EXT(item) ((bool) 0x1 & (item >> 63))
+#define SPEAD_ITEM_ID(item) ((int) 0x7FFFFF & (item >> 40))
+#define SPEAD_ITEM_VAL(item) ((uint64_t) 0xFFFFFFFFFF & item)
+
+// Objects
 typedef struct {
     bool is_ext;
-    uint16_t id;
+    int id;
     uint64_t val;
 } SpeadRawItem;
 
+struct spead_item {
+    bool is_valid;
+    int id;
+    char *val;
+    int64_t length;
+    struct spead_item *next;
+};
+typedef struct spead_item SpeadItem;
+
+struct spead_payload {
+    char *data;
+    int64_t length;
+    int64_t offset;
+    struct spead_payload *next;
+};
+typedef struct spead_payload SpeadPayload;
+
+struct spead_packet {
+    int64_t frame_cnt;
+    int n_items;
+    SpeadRawItem *raw_items;
+    SpeadPayload *payload;
+    struct spead_packet *next;
+};
+typedef struct spead_packet SpeadPacket;
+
 typedef struct {
-    uint16_t n_items;
-    SpeadRawItem *items;
-    uint64_t frame_cnt;
-    char *payload;
-    uint32_t payload_len;
-    uint32_t payload_cnt;
-} SpeadPacket;
+    bool is_valid;
+    int64_t frame_cnt;
+    SpeadPacket *head_pkt;
+    SpeadPacket *last_pkt;
+    SpeadItem *head_item;
+    SpeadItem *last_item;
+} SpeadFrame;
 
 // Methods
-void spead_init_packet(SpeadPacket *pkt);
-void spead_free_packet(SpeadPacket *pkt);
-int spead_unpack_hdr(SpeadPacket *pkt, char *data);
-int spead_unpack_items(SpeadPacket *pkt, char *data);
-int spead_unpack_payload(SpeadPacket *pkt, char *data);
-void spead_pack(SpeadPacket *pkt, char *data);
+void spead_item_init(SpeadItem *item) ;
+void spead_item_wipe(SpeadItem *item) ;
+void spead_payload_init(SpeadPayload *pyld) ;
+void spead_payload_wipe(SpeadPayload *pyld) ;
+void spead_packet_init(SpeadPacket *pkt) ;
+SpeadPacket *spead_packet_clone(SpeadPacket *pkt) ;
+void spead_packet_wipe(SpeadPacket *pkt) ;
+void spead_frame_init(SpeadFrame *frame) ;
+void spead_frame_wipe(SpeadFrame *frame) ;
+
+int64_t spead_packet_unpack_header(SpeadPacket *pkt, char *data) ;
+int64_t spead_packet_unpack_items(SpeadPacket *pkt, char *data) ;
+int64_t spead_packet_unpack_payload(SpeadPacket *pkt, char *data) ;
+
+int spead_frame_add_packet(SpeadFrame *frame, SpeadPacket *pkt) ;
+int spead_frame_finalize(SpeadFrame *frame) ;
 
 #endif

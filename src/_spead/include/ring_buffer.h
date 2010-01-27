@@ -9,25 +9,23 @@
 
 //Objects
 
-typedef struct ring_item {
-	struct ring_item *next;
+struct ring_item {
 	sem_t write_mutex;
 	sem_t read_mutex;
 	SpeadPacket pkt;
-} RING_ITEM;
+	struct ring_item *next;
+};
+typedef struct ring_item RingItem;
 
-typedef struct ring_buffer {
-	//SpeadPacket *pktbuf_ptr;
-	//size_t pktbuf_size;
-
-	struct ring_item *list_ptr;
+typedef struct {
+	RingItem *list_ptr;
 	size_t list_length;
 
-	struct ring_item *write_ptr;
-	struct ring_item *read_ptr;
-} RING_BUFFER;
+	RingItem *write_ptr;
+	RingItem *read_ptr;
+} RingBuffer;
 
-RING_BUFFER *ring_buffer_create(size_t item_count);
-void ring_buffer_delete(RING_BUFFER *rb);
+int ring_buffer_init(RingBuffer *rb, size_t item_count);
+void ring_buffer_wipe(RingBuffer *rb);
 
 #endif // _RING_BUFFER_H_

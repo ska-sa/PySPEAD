@@ -2,15 +2,14 @@ import unittest, spead._spead as _S, spead as S
 import socket, time, struct
 
 example_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 3),
+    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
     S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
-    S.pack(S.EXTITEM_FMT, 1, 0x3333, 0, 8),
-    S.pack(S.RAW_ITEM_FMT, 0, S.PAYLOAD_CNTLEN_ID,
-        S.pack(S.PAYLOAD_CNTLEN_FMT, 0, 8)),
+    S.pack(S.ITEM_FMT, 1, 0x3333, 0),
+    S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
     struct.pack('>d', 3.1415)])
 
 term_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 2),
+    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 2),
     S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 0),
     S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
 

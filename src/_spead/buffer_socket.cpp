@@ -1,46 +1,52 @@
 #include "include/buffer_socket.h"
 
 int default_callback(SpeadPacket *pkt, void *userdata) {
-    printf("    Readout packet with frame_cnt=%d, n_items=%d, payload_len=%d, payload_cnt=%d\n", 
-            pkt->frame_cnt, pkt->n_items, pkt->payload_len, pkt->payload_cnt);
+    if (pkt->payload == NULL) return SPEAD_ERR;
+    printf("    Readout packet with frame_cnt=%d, n_items=%d, payload_len=%d\n", 
+            pkt->frame_cnt, pkt->n_items, pkt->payload->length);
     return 0;
 }
 
-void init_buffer_socket(BufferSocket *bs, size_t item_count) {
+void buffer_socket_init(BufferSocket *bs, size_t item_count) {
     // Initialize a BufferSocket
-    bs->buf = ring_buffer_create(item_count);
-    set_callback(bs, &default_callback);
+    bs->ringbuf = (RingBuffer *) malloc(sizeof(RingBuffer));
+    ring_buffer_init(bs->ringbuf, item_count);
+    buffer_socket_set_callback(bs, &default_callback);
     bs->run_threads = 0;
     bs->userdata = NULL;
 }
 
-void free_buffer_socket(BufferSocket *bs) {
+void buffer_socket_wipe(BufferSocket *bs) {
     // Free all memory allocated for a BufferSocket
-    stop(bs);
-    if (bs->buf) ring_buffer_delete(bs->buf);
+    buffer_socket_stop(bs);
+    //printf("Wiping buffer socket\n");
+    if (bs->ringbuf != NULL) {
+        ring_buffer_wipe(bs->ringbuf);
+        free(bs->ringbuf);
+    }
 }
 
-void set_callback(BufferSocket *bs, int (*cb_func)(SpeadPacket *, void *)) {
+void buffer_socket_set_callback(BufferSocket *bs, int (*cb_func)(SpeadPacket *, void *)) {
     /* Set a callback function for handling data out of ring buffer */
     bs->callback = cb_func;
 }
 
-int start(BufferSocket *bs, int port) {
+int buffer_socket_start(BufferSocket *bs, int port) {
     /* Start socket => buffer and buffer => callback threads */
     if (bs->run_threads != 0) {
         fprintf(stderr, "BufferSocket already running.\n");
-        return 1;
+        return -1;
     }
     bs->port = port;
     bs->run_threads = 1;
-    pthread_create(&bs->net_thread, NULL, net_thread_function, bs);
-    pthread_create(&bs->data_thread, NULL, data_thread_function, bs);
+    pthread_create(&bs->net_thread, NULL, buffer_socket_net_thread, bs);
+    pthread_create(&bs->data_thread, NULL, buffer_socket_data_thread, bs);
     return 0;
 }
 
-int stop(BufferSocket *bs) {
+int buffer_socket_stop(BufferSocket *bs) {
     /* Send halt signal for net/data threads, then join them */
-    if (!bs->run_threads) return 1;
+    if (!bs->run_threads) return -1;
     bs->run_threads = 0;
     pthread_join(bs->net_thread, NULL);
     pthread_join(bs->data_thread, NULL);
@@ -48,15 +54,15 @@ int stop(BufferSocket *bs) {
 }
     
 
-void *data_thread_function(void *arg) {
+void *buffer_socket_data_thread(void *arg) {
     /* This thread reads data out of a ring buffer through a callback */
     BufferSocket *bs = (BufferSocket *)arg;
-    RING_ITEM *this_slot;
+    RingItem *this_slot;
     struct timespec ts;
     int i;
 
     while (bs->run_threads) {
-        this_slot = bs->buf->read_ptr;
+        this_slot = bs->ringbuf->read_ptr;
         if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
             fprintf(stderr, "Data: clock_gettime returned nonzero.\n");
             bs->run_threads = 0;
@@ -71,8 +77,8 @@ void *data_thread_function(void *arg) {
 
         // Check if this packet has STREAM_CTRL set to STREAM_CTRL_VAL_TERM
         for (i=0; i < this_slot->pkt.n_items; i++) {
-            if (this_slot->pkt.items[i].id == SPEAD_STREAM_CTRL_ID &&
-                    this_slot->pkt.items[i].val == SPEAD_STREAM_CTRL_TERM_VAL)
+            if (this_slot->pkt.raw_items[i].id == SPEAD_STREAM_CTRL_ID &&
+                    this_slot->pkt.raw_items[i].val == SPEAD_STREAM_CTRL_TERM_VAL)
                 bs->run_threads = 0;
         }
 
@@ -82,22 +88,20 @@ void *data_thread_function(void *arg) {
             bs->run_threads = 0;
         } else {
             // Release this slot for writing
-            spead_free_packet(&this_slot->pkt);
+            spead_packet_wipe(&this_slot->pkt);
             sem_post(&this_slot->write_mutex);
-            bs->buf->read_ptr = this_slot->next;
+            bs->ringbuf->read_ptr = this_slot->next;
         }
     }
     return NULL;
 }
 
-void *net_thread_function(void *arg) {
+void *buffer_socket_net_thread(void *arg) {
     /* This thread puts data into a ring buffer from a socket*/
     BufferSocket *bs = (BufferSocket *)arg;
-    RING_ITEM *this_slot;
+    RingItem *this_slot;
 
     socket_t sock = setup_network_listener((short) bs->port);
-    //SA_in addr; // packet source's address
-    //socklen_t addr_len = sizeof(addr);
     ssize_t num_bytes=0, bufoff=0;
     int is_ready;
     fd_set readset;
@@ -115,7 +119,7 @@ void *net_thread_function(void *arg) {
     }
 
     while (bs->run_threads) {
-        this_slot = bs->buf->write_ptr;
+        this_slot = bs->ringbuf->write_ptr;
         if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
             fprintf(stderr, "Net: clock_gettime returned nonzero.\n");
             bs->run_threads = 0;
@@ -142,11 +146,11 @@ void *net_thread_function(void *arg) {
                 //}
                 //printf("\n");
                 if (num_bytes >= SPEAD_ITEM_BYTES) {
-                    i = spead_unpack_hdr(&this_slot->pkt, buf);
+                    i = spead_packet_unpack_header(&this_slot->pkt, buf);
                     if (num_bytes >= i + this_slot->pkt.n_items * SPEAD_ITEM_BYTES) {
-                        i += spead_unpack_items(&this_slot->pkt, buf + i);
-                        if (num_bytes >= i + this_slot->pkt.payload_len) {
-                            i += spead_unpack_payload(&this_slot->pkt, buf + i);
+                        i += spead_packet_unpack_items(&this_slot->pkt, buf + i);
+                        if (num_bytes >= i + this_slot->pkt.payload->length) {
+                            i += spead_packet_unpack_payload(&this_slot->pkt, buf + i);
                             // If there are leftovers (we read part of the next packet) copy them to the
                             // front of buf and set bufoff
                             //printf("RX: finished reading packet, %d/%d\n", i, num_bytes);
@@ -168,7 +172,7 @@ void *net_thread_function(void *arg) {
         if (bs->run_threads) {
             //printf("RX: Posting packet\n");
             sem_post(&this_slot->read_mutex);
-            bs->buf->write_ptr = this_slot->next;
+            bs->ringbuf->write_ptr = this_slot->next;
         }
     }
     close(sock);

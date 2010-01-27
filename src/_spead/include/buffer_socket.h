@@ -31,7 +31,7 @@ typedef struct sockaddr_in SA_in;
 typedef struct sockaddr SA;
 
 typedef struct {
-    RING_BUFFER *buf;
+    RingBuffer *ringbuf;
     pthread_t net_thread, data_thread;
     int (*callback)(SpeadPacket *, void *);
     int run_threads;
@@ -40,13 +40,13 @@ typedef struct {
 } BufferSocket;
 
 int default_callback(SpeadPacket *pkt, void *userdata);
-void init_buffer_socket(BufferSocket *, size_t item_count);
-void free_buffer_socket(BufferSocket *);
-void set_callback(BufferSocket *, int (*cb_func)(SpeadPacket *, void *));
-int start(BufferSocket *bs, int port);
-int stop(BufferSocket *bs);
-void *net_thread_function(void *arg);
-void *data_thread_function(void *arg);
+void buffer_socket_init(BufferSocket *, size_t item_count);
+void buffer_socket_wipe(BufferSocket *);
+void buffer_socket_set_callback(BufferSocket *, int (*cb_func)(SpeadPacket *, void *));
+int buffer_socket_start(BufferSocket *bs, int port);
+int buffer_socket_stop(BufferSocket *bs);
+void *buffer_socket_net_thread(void *arg);
+void *buffer_socket_data_thread(void *arg);
 socket_t setup_network_listener(short port);
 
 #endif

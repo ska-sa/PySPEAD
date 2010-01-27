@@ -1,8 +1,8 @@
 '''
 Data packet:
-[ SPEAD #    (16b)     | Ver (16b) | 0 (16b) | # Items (16b) ]
-[ Ext (1b) | ID1 (15b) |           Value (48b)               ]
-[ Ext (1b) | ID2 (15b) | Ext Start (24b) | Ext Length (24b)  ]
+[ SPEAD #    (24b)     | Ver  (8b) |           # Items (32b) ]
+[ Ext (1b) | ID1 (23b) |           Value (40b)               ]
+[ Ext (1b) | ID1 (23b) |      Ext  Offset(40b)               ]
 ...
 [ Payload (heap) .............................................
 .............................................................]
@@ -18,15 +18,15 @@ logger = logging.getLogger('spead')
 # | |__| (_) | | | \__ \ || (_| | | | | |_\__ \
 #  \____\___/|_| |_|___/\__\__,_|_| |_|\__|___/
 
-SPEAD_MAGIC = 0x4b52
+SPEAD_MAGIC = 0x4b5254
 VERSION = 3
 MAX_PACKET_SIZE = 9200
 MAX_PAYLOADS_IN_FRAME = 4096
 UNRESERVED_OPTION = 2**12
 
 FRAME_CNT_ID = 0x01
-PAYLOAD_CNTLEN_ID = 0x02
-HEAP_LENOFF_ID = 0x03
+PAYLOAD_OFFSET_ID = 0x02
+PAYLOAD_LENGTH_ID = 0x03
 DESCRIPTOR_ID = 0x04
 STREAM_CTRL_ID = 0x05
 NAME_ID = 0x06
@@ -34,34 +34,27 @@ DESCRIPTION_ID = 0x07
 SHAPE_ID = 0x08
 FORMAT_ID = 0x09
 ID_ID = 0x10
-_PAYLOAD_ID = 0x00
 
-DEFAULT_FMT = (('u',48),)
-HDR_FMT = (('u',16),('u',16),('u',16),('u',16))
-RAW_ITEM_FMT = (('u',1),('u',15),('c',48))
-ITEM_FMT = (('u',1),('u',15),('u',48))
-EXTITEM_FMT = (('u',1),('u',15),('u',24),('u',24))
-IEXT_FMT = (('u',24),('u',24))
-ID_FMT = (('u',32),('u',16))
+DEFAULT_FMT = (('u',40),)
+HDR_FMT = (('u',24),('u',8),('u',32))
+RAW_ITEM_FMT = (('u',1),('u',23),('c',40))
+ITEM_FMT = (('u',1),('u',23),('u',40))
+ID_FMT = (('u',16),('u',24))
 SHAPE_FMT = (('u',8),('u',56))
-FORMAT_FMT = (('c',8),('u',16))
-HEAP_LENOFF_FMT =  (('u',24),('u',24))    # Heap length, Heap offset
-PAYLOAD_CNTLEN_FMT =  (('u',24),('u',24)) # Payload counter, payload length
+FORMAT_FMT = (('c',8),('u',24))
 STR_FMT = (('c',8),)
 
 ITEM = {
-    'PAYLOAD_CNTLEN': {'ID':PAYLOAD_CNTLEN_ID, 'FMT':PAYLOAD_CNTLEN_FMT, 'CNT':1},
     'FRAME_CNT':      {'ID':FRAME_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
+    'PAYLOAD_LEN':    {'ID':PAYLOAD_LENGTH_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
+    'PAYLOAD_OFF':    {'ID':PAYLOAD_OFFSET_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':SPEAD_MAGIC,        'CNT':1},
     'STREAM_CTRL':    {'ID':STREAM_CTRL_ID,    'FMT':DEFAULT_FMT,        'CNT':1},
     'NAME':           {'ID':NAME_ID,           'FMT':STR_FMT,            'CNT':-1},
+    'DESCRIPTION':    {'ID':DESCRIPTION_ID,    'FMT':STR_FMT,            'CNT':-1},
     'SHAPE':          {'ID':SHAPE_ID,          'FMT':SHAPE_FMT,          'CNT':-1},
     'FORMAT':         {'ID':FORMAT_ID,         'FMT':FORMAT_FMT,         'CNT':-1},
-    'DESCRIPTION':    {'ID':DESCRIPTION_ID,    'FMT':STR_FMT,            'CNT':-1},
     'ID':             {'ID':ID_ID,             'FMT':ID_FMT,             'CNT':1},
-    'HEAP_LENOFF':    {'ID':HEAP_LENOFF_ID,    'FMT':HEAP_LENOFF_FMT,    'CNT':1},
-    '_PAYLOAD':       {'ID':_PAYLOAD_ID,       'FMT':None,               'CNT':0},
-                            # Used carry payload data before assembly into heap
 }
 
 NAME = {}
@@ -69,9 +62,9 @@ for name, d in ITEM.iteritems(): NAME[d['ID']] = name
 
 ITEM_BITS = 64
 ITEM_BYTES = ITEM_BITS / 8
-IVAL_BITS = 48
+IVAL_BITS = 40
 IVAL_BYTES = IVAL_BITS / 8
-IVAL_NULL = '\x00'*6
+IVAL_NULL = '\x00'*IVAL_BYTES
 STREAM_CTRL_TERM_VAL = 0x2
 
 pack_types = {
