@@ -42,7 +42,7 @@
 #define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + n * SPEAD_ITEM_BYTES))[0]))
 #define SPEAD_ITEM_EXT(item) ((bool) 0x1 & (item >> 63))
 #define SPEAD_ITEM_ID(item) ((int) 0x7FFFFF & (item >> 40))
-#define SPEAD_ITEM_VAL(item) ((uint64_t) 0xFFFFFFFFFF & item)
+#define SPEAD_ITEM_VAL(item) ((uint64_t) 0xFFFFFFFFFFLL & item)
 
 // Objects
 typedef struct {
