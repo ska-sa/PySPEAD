@@ -8,7 +8,7 @@ def receive():
     t = spead.TransportUDPrx(PORT)
     ig = spead.ItemGroup()
     for frame in spead.iterframes(t):
-        print spead.readable_frame(frame)
+        #print spead.readable_frame(frame)
         ig.update(frame)
         print 'Got frame:', ig.frame_cnt
         for name in ig.keys():

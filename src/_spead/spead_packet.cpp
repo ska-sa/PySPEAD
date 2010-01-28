@@ -25,12 +25,16 @@ void spead_payload_init(SpeadPayload *pyld) {
 }
 
 void spead_payload_wipe(SpeadPayload *pyld) {
+    //printf("Wiping payload (%d)\n", pyld);
     if (pyld->next != NULL) {
+        //printf("Wiping payload (%d) -> next (%d)\n", pyld, pyld->next);
         spead_payload_wipe(pyld->next);
         free(pyld->next);
     }
+    //printf("Wiping payload (%d) freeing data (%d)\n", pyld, pyld->data);
     if (pyld->data != NULL) free(pyld->data);
     spead_payload_init(pyld);  // Wipe this payload clean
+    //printf("Wiping payload (%d) done.\n", pyld);
 }
 
 void spead_packet_init(SpeadPacket *pkt) {
@@ -77,6 +81,7 @@ SpeadPacket *spead_packet_clone(SpeadPacket *pkt) {
     if (pkt->payload != NULL) {
         newpkt->payload = (SpeadPayload *)malloc(sizeof(SpeadPayload));
         if (newpkt->payload == NULL) return NULL;
+        spead_payload_init(newpkt->payload);
         newpkt->payload->length = pkt->payload->length;
         newpkt->payload->offset = pkt->payload->offset;
         newpkt->payload->next = NULL;
@@ -88,6 +93,7 @@ SpeadPacket *spead_packet_clone(SpeadPacket *pkt) {
             }
         }
     }
+    //printf("Cloning pkt (%d) to newpkt (%d)\n", pkt, newpkt);
     return newpkt;
 }
     
@@ -267,7 +273,7 @@ int spead_frame_finalize(SpeadFrame *frame) {
                     pkt2 = pkt2->next; j = 0;  // Move on to first raw_item in next packet
                 } while (pkt2 != NULL);
                 //printf("Allocating item of length %d\n", item->length);
-                if (item->length <= 0) {  // This happens when the last packet in a frame goes missing
+                if (item->length < 0) {  // This happens when the last packet in a frame goes missing
                     item->is_valid = 0;
                 } else {
                     item->val = (char *) malloc(item->length * sizeof(char));
@@ -300,7 +306,11 @@ int spead_frame_finalize(SpeadFrame *frame) {
                 //printf("Allocating item of length %d\n", item->length);
                 if (item->val == NULL) return SPEAD_ERR;
                 // Value copy here is hardcoded to big/network endian
-                ((uint64_t *)item->val)[0] = htonll(raw_item->val);
+                //((uint64_t *)item->val)[0] = htonll(raw_item->val);
+                for (o=0; o < item->length; o++) {
+                    item->val[o] = 0xFF & (raw_item->val >> 8*(SPEAD_ITEM_VAL_BYTES - o - 1));
+                }
+                //printf("id=%d val=%d, raw_val=%d\n", raw_item->id, ((uint64_t *)item->val)[0], raw_item->val);
             }
             // Link this new item in
             if (frame->last_item == NULL) {

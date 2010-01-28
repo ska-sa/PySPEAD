@@ -1,21 +1,22 @@
-import unittest, spead as S, bitstring, struct, sys, os, time, socket
+import unittest, spead as S, spead._spead as _S
+import bitstring, struct, sys, os, time, socket
+#import logging; logging.basicConfig(level=logging.DEBUG)
 
 example_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 3),
+    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
     S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
-    S.pack(S.EXTITEM_FMT, 1, 0x3333, 0, 8),
-    S.pack(S.RAW_ITEM_FMT, 0, S.PAYLOAD_CNTLEN_ID,
-        S.pack(S.PAYLOAD_CNTLEN_FMT, 0, 8)),
+    S.pack(S.ITEM_FMT, 1, 0x3333, 0),
+    S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
     struct.pack('>d', 3.1415)])
 
 term_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 0, 2),
+    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 2),
     S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 0),
     S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
 
 example_frame = {
-    S.FRAME_CNT_ID: '\x00\x00\x00\x00\x00\x03',
-    0x3333: struct.pack('>d', 3.1415)
+    S.FRAME_CNT_ID: '\x00\x00\x00\x00\x03',
+    0x3333: struct.pack('>d', 3.1415),
 }
 
 class RawUDPrx:
@@ -30,34 +31,34 @@ class RawUDPrx:
 
 class TestMethods(unittest.TestCase):
     def test_calcsize(self):
-        self.assertEqual(S.calcsize(S.DEFAULT_FMT), 48)
+        self.assertEqual(S.calcsize(S.DEFAULT_FMT), 40)
         self.assertEqual(S.calcsize(S.ITEM_FMT), 64)
-        self.assertEqual(S.calcsize(S.FORMAT_FMT), 24)
+        self.assertEqual(S.calcsize(S.FORMAT_FMT), 32)
     def test_conv_format(self):
-        self.assertEqual(S.conv_format(S.DEFAULT_FMT), 'uint:48')
-        self.assertEqual(S.conv_format(S.ITEM_FMT), 'uint:1,uint:15,uint:48')
-        self.assertEqual(S.conv_format(S.FORMAT_FMT), 'bytes:1,uint:16')
+        self.assertEqual(S.conv_format(S.DEFAULT_FMT), 'uint:40')
+        self.assertEqual(S.conv_format(S.ITEM_FMT), 'uint:1,uint:23,uint:40')
+        self.assertEqual(S.conv_format(S.FORMAT_FMT), 'bytes:1,uint:24')
     def test_pack(self):
-        self.assertEqual(S.pack(S.DEFAULT_FMT, 2**40+2**8), 
-            '\x01\x00\x00\x00\x01\x00')
+        self.assertEqual(S.pack(S.DEFAULT_FMT, 2**32+2**8), 
+            '\x01\x00\x00\x01\x00')
         self.assertEqual(S.pack(S.ITEM_FMT, 0, 4, 8), 
-            '\x00\x04\x00\x00\x00\x00\x00\x08')
-        self.assertEqual(S.pack(S.FORMAT_FMT, 'u', 8), 'u\x00\x08')
+            '\x00\x00\x04\x00\x00\x00\x00\x08')
+        self.assertEqual(S.pack(S.FORMAT_FMT, 'u', 8), 'u\x00\x00\x08')
     def test_pack_to_bitstring(self):
-        self.assertEqual(S.pack_to_bitstring(S.DEFAULT_FMT, 2**40+2**8).bytes, 
-            '\x01\x00\x00\x00\x01\x00')
+        self.assertEqual(S.pack_to_bitstring(S.DEFAULT_FMT, 2**32+2**8).bytes, 
+            '\x01\x00\x00\x01\x00')
         self.assertEqual(S.pack_to_bitstring(S.ITEM_FMT, 0, 4, 8).bytes, 
-            '\x00\x04\x00\x00\x00\x00\x00\x08')
+            '\x00\x00\x04\x00\x00\x00\x00\x08')
         self.assertEqual(S.pack_to_bitstring(S.FORMAT_FMT, 'u', 8).bytes, 
-            'u\x00\x08')
+            'u\x00\x00\x08')
     def test_unpack(self):
         self.assertEqual(S.unpack(S.DEFAULT_FMT,
-            '\x01\x00\x00\x00\x01\x00'), [[2**40+2**8]])
+            '\x01\x00\x00\x01\x00'), [[2**32+2**8]])
         self.assertEqual(S.unpack(S.ITEM_FMT,
-            '\x00\x04\x00\x00\x00\x00\x00\x08'), [[0, 4, 8]]) 
-        self.assertEqual(S.unpack(S.FORMAT_FMT, 'u\x00\x08'), [['u', 8]]) 
-        bs = bitstring.BitString(bytes='\x01\x00\x00\x00\x01\x00')
-        self.assertEqual(S.unpack(S.DEFAULT_FMT, bs), [[2**40+2**8]])
+            '\x00\x00\x04\x00\x00\x00\x00\x08'), [[0, 4, 8]]) 
+        self.assertEqual(S.unpack(S.FORMAT_FMT, 'u\x00\x00\x08'), [['u', 8]]) 
+        bs = bitstring.BitString(bytes='\x01\x00\x00\x01\x00')
+        self.assertEqual(S.unpack(S.DEFAULT_FMT, bs), [[2**32+2**8]])
         self.assertEqual(S.unpack(S.STR_FMT, 'abcde', cnt=4), [[c] for c in 'abcd'])
         self.assertEqual(S.unpack(S.STR_FMT, 'abcde', cnt=-1), [[c] for c in 'abcde'])
     def test_readable_header(self):
@@ -67,11 +68,16 @@ class TestMethods(unittest.TestCase):
             self.assertEqual(type(s), str)
             s = S.readable_header(h, prepend='PREFIX:')
             self.assertTrue(s.startswith('PREFIX:'))
-    def test_readable_packet(self):
-        s = S.readable_packet(example_pkt)
+    def test_readable_binpacket(self):
+        s = S.readable_binpacket(example_pkt)
         self.assertEqual(type(s), str)
         self.assertEqual(len(s.split('\n')), 8)
-        s = S.readable_packet(example_pkt, prepend='PREFIX:')
+        s = S.readable_binpacket(example_pkt, prepend='PREFIX:')
+        for L in s.split('\n'): self.assertTrue(L.startswith('PREFIX:'))
+    def test_readable_speadpacket(self):
+        pkt = _S.SpeadPacket()
+        pkt.unpack(example_pkt)
+        s = S.readable_speadpacket(pkt, prepend='PREFIX:')
         for L in s.split('\n'): self.assertTrue(L.startswith('PREFIX:'))
     def test_readable_frame(self):
         s = S.readable_frame(example_frame)
@@ -79,76 +85,72 @@ class TestMethods(unittest.TestCase):
         self.assertEqual(len(s.split('\n')), 5)
         s = S.readable_frame(example_frame, prepend='PREFIX:')
         for L in s.split('\n'): self.assertTrue(L.startswith('PREFIX:'))
-    def test_iterpackets(self):
-        frame = {0x1234: (1,'abcdefgh'), S.FRAME_CNT_ID: (0, '\x00'*6)}
-        pkts = [p for p in S.iterpackets(frame, use_heap_lenoff=False)]
+    def test_iter_genpackets(self):
+        frame = {0x1234: (1,'abcdefgh'), S.FRAME_CNT_ID: (0, S.IVAL_NULL)}
+        pkts = [p for p in S.iter_genpackets(frame)]
         self.assertEqual(len(pkts), 1)
         pkt = pkts[0]
-        self.assertEqual(struct.unpack('>HHHH', pkt[:8]), 
-            (S.SPEAD_MAGIC, S.VERSION, 0, 3))
+        self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+            [S.SPEAD_MAGIC, S.VERSION, 4])
         for i in range(1,4):
             is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
             if id == 0x1234:
                 self.assertEqual(is_ext, 1)
-                self.assertEqual(S.unpack(S.IEXT_FMT, raw_val)[0], [0, 8])
+                self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
             elif id == S.FRAME_CNT_ID:
                 self.assertEqual(is_ext, 0)
-                self.assertEqual(raw_val, '\x00'*6)
-            elif id == S.PAYLOAD_CNTLEN_ID:
+                self.assertEqual(raw_val, S.IVAL_NULL)
+            elif id == S.PAYLOAD_LENGTH_ID:
                 self.assertEqual(is_ext, 0)
-                self.assertEqual(S.unpack(S.PAYLOAD_CNTLEN_FMT, raw_val)[0], 
-                        [0, 8])
+                self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 8)
+            elif id == S.PAYLOAD_OFFSET_ID:
+                self.assertEqual(is_ext, 0)
+                self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
             else: self.assertTrue(False)
-        self.assertEqual(pkt[32:], 'abcdefgh')
+        self.assertEqual(pkt[40:], 'abcdefgh')
 
         frame[0x1234] = (1, 'abcdefgh' * 4000)
-        pkts = [p for p in S.iterpackets(frame, use_heap_lenoff=True)]
+        pkts = [p for p in S.iter_genpackets(frame)]
         self.assertEqual(len(pkts), 4)
         payloads = []
         for cnt, pkt in enumerate(pkts):
             if cnt == 0:
-                self.assertEqual(struct.unpack('>HHHH', pkt[:8]), 
-                    (S.SPEAD_MAGIC, S.VERSION, 0, 4))
+                self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+                    [S.SPEAD_MAGIC, S.VERSION, 4])
                 for i in range(1,5):
                     is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
                         pkt[8*i:8*i+8])[0]
                     if id == 0x1234:
                         self.assertEqual(is_ext, 1)
-                        self.assertEqual(S.unpack(S.IEXT_FMT, raw_val)[0], 
-                                [0, 32000])
+                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
                     elif id == S.FRAME_CNT_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(raw_val, '\x00'*6)
-                    elif id == S.PAYLOAD_CNTLEN_ID:
+                        self.assertEqual(raw_val, S.IVAL_NULL)
+                    elif id == S.PAYLOAD_LENGTH_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(S.unpack(S.PAYLOAD_CNTLEN_FMT, raw_val)[0], 
-                                [0, S.MAX_PACKET_SIZE - 40])
-                    elif id == S.HEAP_LENOFF_ID:
+                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_SIZE - S.ITEM_BYTES*5)
+                    elif id == S.PAYLOAD_OFFSET_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(S.unpack(S.HEAP_LENOFF_FMT, raw_val)[0], 
-                                [32000, 0])
+                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
                     else: self.assertTrue(False)
-                payloads.append(pkt[40:])
+                payloads.append(pkt[5*S.ITEM_BYTES:])
             else:
-                self.assertEqual(struct.unpack('>HHHH', pkt[:8]), 
-                    (S.SPEAD_MAGIC, S.VERSION, 0, 3))
+                self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+                    [S.SPEAD_MAGIC, S.VERSION, 3])
                 for i in range(1,4):
                     is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
                         pkt[8*i:8*i+8])[0]
                     if id == S.FRAME_CNT_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(raw_val, '\x00'*6)
-                    elif id == S.PAYLOAD_CNTLEN_ID:
+                        self.assertEqual(raw_val, S.IVAL_NULL)
+                    elif id == S.PAYLOAD_LENGTH_ID:
                         self.assertEqual(is_ext, 0)
-                        if cnt != 3:
-                            self.assertEqual(S.unpack(S.PAYLOAD_CNTLEN_FMT, raw_val)[0], 
-                                [cnt, S.MAX_PACKET_SIZE - 32])
-                    elif id == S.HEAP_LENOFF_ID:
+                        if cnt < 3: self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_SIZE - S.ITEM_BYTES*4)
+                    elif id == S.PAYLOAD_OFFSET_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(S.unpack(S.HEAP_LENOFF_FMT, raw_val)[0], 
-                                [32000, (S.MAX_PACKET_SIZE-40)+(cnt-1)*(S.MAX_PACKET_SIZE-32)])
+                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], (S.MAX_PACKET_SIZE-S.ITEM_BYTES*5)+(cnt-1)*(S.MAX_PACKET_SIZE-S.ITEM_BYTES*4))
                     else: self.assertTrue(False)
-                payloads.append(pkt[32:])
+                payloads.append(pkt[4*S.ITEM_BYTES:])
         heap = ''.join(payloads)
         self.assertEqual(len(heap), len('abcdefgh' * 4000))
         self.assertEqual(heap, 'abcdefgh'*4000)
@@ -162,8 +164,8 @@ class TestDescriptor(unittest.TestCase):
         self.assertEqual(self.d.name, 'varname')
         self.assertEqual(self.d.description, 'Description')
         self.assertEqual(self.d.shape, [])
-        self.assertEqual(self.d.format, (('u',48),))
-        self.assertEqual(self.d.nbits, 48)
+        self.assertEqual(self.d.format, (('u',40),))
+        self.assertEqual(self.d.nbits, 40)
         self.assertEqual(self.d.size, 1)
     def test_to_from_descriptor_string(self):
         s = self.d.to_descriptor_string()
@@ -172,35 +174,35 @@ class TestDescriptor(unittest.TestCase):
         self.assertEqual(d.name, 'varname')
         self.assertEqual(d.description, 'Description')
         self.assertEqual(d.shape, [])
-        self.assertEqual(d.format, [['u',48]])
-        self.assertEqual(d.nbits, 48)
+        self.assertEqual(d.format, [['u',40]])
+        self.assertEqual(d.nbits, 40)
         self.assertEqual(d.size, 1)
 
 class TestItem(unittest.TestCase):
     def setUp(self):
-        self.i48 = S.Item(id=2**15+2**14, name='var')
+        self.i40 = S.Item(id=2**15+2**14, name='var')
         self.i64 = S.Item(id=2**15+2**14, name='var', fmt=[('f',64)])
     def test_get_set_value(self):
-        self.i48.set_value(53)
-        self.assertEqual(self.i48._value, 53)
-        self.assertEqual(self.i48.get_value(), 53)
+        self.i40.set_value(53)
+        self.assertEqual(self.i40._value, 53)
+        self.assertEqual(self.i40.get_value(), 53)
         self.i64.set_value(3.1415)
         self.assertEqual(self.i64._value, 3.1415)
         self.assertEqual(self.i64.get_value(), 3.1415)
     def test_has_changed(self):
-        self.i48._changed = False
-        self.assertEqual(self.i48.has_changed(), False)
-        self.i48.set_value(77)
-        self.assertEqual(self.i48.has_changed(), True)
+        self.i40._changed = False
+        self.assertEqual(self.i40.has_changed(), False)
+        self.i40.set_value(77)
+        self.assertEqual(self.i40.has_changed(), True)
     def test_unset_changed(self):
-        self.i48._changed = True
-        self.i48.unset_changed()
-        self.assertEqual(self.i48._changed, False)
+        self.i40._changed = True
+        self.i40.unset_changed()
+        self.assertEqual(self.i40._changed, False)
     def test_to_from_value_string(self):
-        self.i48.set_value(5)
-        self.assertEqual(self.i48.to_value_string(), '\x00\x00\x00\x00\x00\x05')
-        self.i48.from_value_string('\x00'*6)
-        self.assertEqual(self.i48.get_value(), 0)
+        self.i40.set_value(5)
+        self.assertEqual(self.i40.to_value_string(), '\x00\x00\x00\x00\x05')
+        self.i40.from_value_string('\x00'*6)
+        self.assertEqual(self.i40.get_value(), 0)
         self.i64.set_value(6.28)
         self.assertEqual(self.i64.to_value_string(), '@\x19\x1e\xb8Q\xeb\x85\x1f')
         self.i64.from_value_string('\x00'*8)
@@ -249,10 +251,10 @@ class TestItemGroup(unittest.TestCase):
         self.ig['var3'] = 3.1415
         frame = self.ig.get_frame()
         # Test that FRAME_CNT is present
-        self.assertEqual(frame[S.FRAME_CNT_ID], (0,'\x00\x00\x00\x00\x00\x05'))
+        self.assertEqual(frame[S.FRAME_CNT_ID], (0,'\x00\x00\x00\x00\x05'))
         # Test values
-        self.assertEqual(frame[self.id1], (0,'\x00\x00\x00\x00\x00\x01'))
-        self.assertEqual(frame[self.id2], (0,'\x00\x00\x00\x00\x00\x02'))
+        self.assertEqual(frame[self.id1], (0,'\x00\x00\x00\x00\x01'))
+        self.assertEqual(frame[self.id2], (0,'\x00\x00\x00\x00\x02'))
         self.assertEqual(frame[self.id3], (1,struct.pack('>d', 3.1415)))
         # Test descriptors
         descriptors = frame[S.DESCRIPTOR_ID]
@@ -262,19 +264,28 @@ class TestItemGroup(unittest.TestCase):
         self.assertTrue(self.ig.get_item('var3').to_descriptor_string() in descriptors)
     def test_update(self):
         ig2 = S.ItemGroup()
-        frame = {
-            S.FRAME_CNT_ID: (0, '\x00\x00\x00\x00\x00\x0f'),
-            S.DESCRIPTOR_ID: [self.ig.get_item(name).to_descriptor_string() for name in self.ig.keys()],
-            self.id1: (0, '\x00\x00\x00\x00\x00\x0f'),
-            self.id2: (0, '\x00\x00\x00\x00\x00\x0f'),
-            self.id3: (1, struct.pack('>d', 15.15)),
-        }
+        ig2.add_item('var1', id=0x3333, fmt=[('f',64)])
+        ig2.add_item('var2', id=0x3334)
+        ig2['var1'] = 10
+        ig2['var2'] = 10
+        frame = _S.SpeadFrame()
+        p = _S.SpeadPacket()
+        p.unpack(example_pkt)
+        frame.add_packet(p)
+        frame.finalize()
+        #frame = {
+        #    S.FRAME_CNT_ID: (0, '\x00\x00\x00\x00\x0f'),
+        #    S.DESCRIPTOR_ID: [self.ig.get_item(name).to_descriptor_string() for name in self.ig.keys()],
+        #    self.id1: (0, '\x00\x00\x00\x00\x0f'),
+        #    self.id2: (0, '\x00\x00\x00\x00\x0f'),
+        #    self.id3: (1, struct.pack('>d', 15.15)),
+        #}
         ig2.update(frame)
-        self.assertEqual(ig2.frame_cnt, 15)
-        self.assertEqual(len(ig2.keys()), 3)
-        self.assertEqual(ig2['var1'], 15)
-        self.assertEqual(ig2['var2'], 15)
-        self.assertEqual(ig2['var3'], 15.15)
+        self.assertEqual(ig2.frame_cnt, 3)
+        #self.assertEqual(len(ig2.keys()), 3)
+        self.assertEqual(ig2['var1'], 3.1415)
+        self.assertEqual(ig2['var2'], 10)
+        #self.assertEqual(ig2['var3'], 15.15)
 
 class TestTransportString(unittest.TestCase):
     def setUp(self):
@@ -311,8 +322,8 @@ class TestTransportFile(unittest.TestCase):
 
 class TestTransportUDPtx(unittest.TestCase):
     def setUp(self):
-        self.t_tx = S.TransportUDPtx(ip='127.0.0.1', port=50000)
-        self.t_rx = RawUDPrx(port=50000)
+        self.t_tx = S.TransportUDPtx(ip='127.0.0.1', port=50001)
+        self.t_rx = RawUDPrx(port=50001)
     def test_read_write(self):
         self.t_tx.write('abcd')
         self.assertEqual(self.t_rx.read(4), 'abcd')
@@ -333,9 +344,9 @@ class TestTransportUDPrx(unittest.TestCase):
         self.t_tx.write(term_pkt)
         time.sleep(.001)
         self.assertFalse(t_rx.is_running())
-        self.assertEqual(len(t_rx.pkts), 2)
+        self.assertEqual(len(t_rx.pkts), 3)
         pkts = [pkt for pkt in t_rx.iterpackets()]
-        self.assertEqual(len(pkts), 2)
+        self.assertEqual(len(pkts), 3)
         self.assertFalse(t_rx.is_running())
 
 class TestTransmitter(unittest.TestCase):
@@ -366,7 +377,8 @@ class Testiterframes(unittest.TestCase):
         ig.add_item(name='var1'); ig['var1'] = 1
         ig.add_item(name='var2'); ig['var2'] = 2
         tx = S.Transmitter(S.TransportFile(self.filename,'w'))
-        tx.send_frame(ig.get_frame())
+        frame = ig.get_frame()
+        tx.send_frame(frame)
         tx.end()
         self.rx_tport = S.TransportFile(self.filename,'r')
     def tearDown(self):

@@ -23,6 +23,7 @@
 #define SPEAD_FRAME_CNT_ID          0x01
 #define SPEAD_PAYLOAD_OFFSET_ID     0x02
 #define SPEAD_PAYLOAD_LENGTH_ID     0x03
+#define SPEAD_DESCRIPTOR_ID         0x04
 #define SPEAD_STREAM_CTRL_ID        0x05
 
 #define SPEAD_STREAM_CTRL_TERM_VAL  0x02

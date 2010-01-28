@@ -280,7 +280,7 @@ PyObject *SpeadFrameObj_finalize(SpeadFrameObj *self) {
 PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
     int result;
     SpeadItem *item;
-    PyObject *rv;
+    PyObject *rv, *key, *value;
     if (self->frame.head_item == NULL) {
         PyErr_Format(PyExc_RuntimeError, "SpeadFrame was not finalized before SpeadFrame.get_items() was called");
         return NULL;
@@ -290,19 +290,37 @@ PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
         PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.finalize()");
         return NULL;
     }
+    // Every frame should have a list of descriptors to process
+    key = PyInt_FromLong(SPEAD_DESCRIPTOR_ID);
+    value = PyList_New(0);
+    PyDict_SetItem(rv, key, value);
+    Py_DECREF(key);
+    Py_DECREF(value);
     item = self->frame.head_item;
     while (item != NULL) {
         if (item->is_valid) {
+            // Build key:value pair
+            key = PyInt_FromLong(item->id);
             if (item->length == 0) {
-                result = PyDict_SetItem(rv, PyInt_FromLong(item->id), PyString_FromString(""));
+                value = PyString_FromString("");
             } else {
-                result = PyDict_SetItem(rv, PyInt_FromLong(item->id), 
-                    PyString_FromStringAndSize(item->val,item->length));
+                value = PyString_FromStringAndSize(item->val,item->length);
+            }
+            // For DESCRIPTORs only, repeat item entries appear in a list
+            if (item->id == SPEAD_DESCRIPTOR_ID) {
+                // We know PyDict_GetItem can't fail b/c we set this key above
+                result = PyList_Append(PyDict_GetItem(rv, key), value);
+            // Otherwise, overwrite previous value
+            } else {
+                result = PyDict_SetItem(rv, key, value);
             }
             if (result == -1) {
                 PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.get_items()");
                 return NULL;
-            }
+            } 
+            // Release ownership of key and value (they live in the dict now)
+            Py_DECREF(key);
+            Py_DECREF(value);
         }
         item = item->next;
     }
@@ -413,7 +431,7 @@ static PyObject * BsockObject_start(BsockObject *self, PyObject *args) {
 
 static PyObject * BsockObject_stop(BsockObject *self) {
     //PyThreadState *_save;
-    // Release Python Global Interpreter Lock so that a python callback end
+    // Release Python Global Interpreter Lock so that python callback can end
     Py_BEGIN_ALLOW_THREADS
     buffer_socket_stop(&(self->bs));
     // Reacquire Python Global Interpreter Lock
