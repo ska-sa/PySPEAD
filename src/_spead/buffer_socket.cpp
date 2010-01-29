@@ -139,7 +139,8 @@ void *buffer_socket_net_thread(void *arg) {
             // Start creating packet from incoming data
             if (is_ready > 0) {
                 //printf("RX: Reading data: bufoff=%d\n", bufoff);
-                num_bytes = recv(sock, buf+bufoff, SPEAD_MAX_PACKET_SIZE, 0) + bufoff;
+                // For UDP, recvfrom returns exactly one packet
+                num_bytes = recvfrom(sock, buf, SPEAD_MAX_PACKET_SIZE, 0, NULL, NULL);
                 //for (i=0;i<num_bytes;i++) {
                 //    if (i % 8 == 0) printf("\n");
                 //    printf("%02x ", (uint8_t)buf[i]);
@@ -154,13 +155,13 @@ void *buffer_socket_net_thread(void *arg) {
                             // If there are leftovers (we read part of the next packet) copy them to the
                             // front of buf and set bufoff
                             //printf("RX: finished reading packet, %d/%d\n", i, num_bytes);
-                            for (bufoff=0; bufoff < num_bytes - i; bufoff++) {
-                                buf[bufoff] = buf[i+bufoff];
-                            }
+                            //for (bufoff=0; bufoff < num_bytes - i; bufoff++) {
+                            //    buf[bufoff] = buf[i+bufoff];
+                            //}
                             break;
                         }
                     }
-                    bufoff = 0;  // bufoff is reset whenever there are enough data for a packet, but no match
+                    //bufoff = 0;  // bufoff is reset whenever there are enough data for a packet, but no match
                 }
             } else if (is_ready < 0) {
                 if (errno == EINTR) continue;
