@@ -2,5 +2,27 @@ PySPEAD
 
 This is a fast and light Python implementation of the Streaming Protocol for the Exchange of Astronomical Data
 
-The test_corr_format.py script demonstrates creating a streamer and a receiver and performing a simple
-data exchange between the two.
+ToDo:
+    - There are currently 3 memory copies involved in generating frames from UDP packets:
+        recvfrom => buf
+        buf => SpeadPacket->payload->data (which is malloc'd)
+        SpeadPacket->payload->data => SpeadItem->value (which is malloc'd)
+      We could remove one of these pretty easily by putting recvfrom => SpeadPacket (which is malloc'd),
+      bypassing buf, and then just pointing to where the payload begins.  This would require a slight change 
+      to the structure of SpeadPacket and some attention to memory management.
+
+    - Right now, packets are pulled straight from the socket and put into a packet ringbuffer.  The packet
+      ringbuffer then feeds a callback that consumes the packets and creates a frame.  While frame creation from
+      packets is performed in C, a Python callback is currently used to hand the packets to SpeadFrame.
+      (a) We should make frame assembly happen automatically, so that the Python callback is fed frames directly.
+      (b) While implementing this, we should also incorportate packet sorting by frame_cnt so that packets can
+          arrive out of order, but frames are assembled in order to the extent allowed by the available buffer.
+
+    - The semaphores used in ringbuffer.h should be changed to posix semaphores from pthreads.h.  This is because
+      semaphore.h is not available on MacOSX, and because we were using pthreads.h anyway.
+
+    - Confusingly, there are currently two kinds of "frame" in spead.py: one is a SpeadFrame that is generated
+      by a receiver, and one is a dictionary that is used by a transmitter.  We should move the frame => packets
+      pipeline into C as well, and make all frames of the SpeadFrame type.
+        
+    

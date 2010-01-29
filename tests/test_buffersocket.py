@@ -39,9 +39,6 @@ class TestBufferSocket(unittest.TestCase):
         def callback(pkt): pass
         self.bs.set_callback(callback)
         self.bs.unset_callback()
-        #cb = CollateBuffer(nant=8,npol=1,nchan=2048,nwin=1)
-        #self.bs.set_callback(cb)
-        #self.bs.unset_callback()
         self.assertRaises(TypeError, self.bs.set_callback, (None,))
     def test_auto_shutdown(self):
         bs = _S.BufferSocket()
@@ -84,55 +81,6 @@ class TestBufferSocket(unittest.TestCase):
         time.sleep(.0001)
         self.assertFalse(self.bs.is_running())
         self.bs.unset_callback()
-    #def test_cb_callback(self):
-    #    cb1 = CollateBuffer(nant=NANT,npol=1,nchan=2048,nwin=1)
-    #    cb2 = CollateBuffer(nant=NANT,npol=1,nchan=2048,nwin=1)
-    #    def callback(i,j,pol,t,data,flags):
-    #        global data_in_readout
-    #        data_in_readout = True
-    #    cb1.set_callback(callback)
-    #    bs = BufferSocket()
-    #    bs.set_callback(cb1)
-    #    bs.start(PORT)
-    #    xengs = [sim.XEngine(nant=NANT,npol=1,nchan=2048,engine_id=x) \
-    #        for x in range(NANT)]
-    #    xstreams = [x.get_pkt_stream() for x in xengs]
-    #    timestamp = None
-    #    cnt = 0
-    #    while True:
-    #        for x in xstreams:
-    #            pkt = x.next()
-    #            pkt.preverr = cnt
-    #            cnt += 1
-    #            if timestamp is None: timestamp = pkt.timestamp
-    #            if pkt.timestamp > timestamp + 2: break
-    #            loopback(pkt.pack(), port=PORT)
-    #            cb2.collate_packet(pkt)
-    #        time.sleep(.0001)
-    #        if pkt.timestamp > timestamp + 2: break
-    #    bs.stop()
-    #    self.assertTrue(data_in_readout)
-    #def test_all_data(self):
-    #    cb = CollateBuffer(nant=NANT,npol=1,nchan=2048,nwin=1)
-    #    def callback(i,j,pol,t,data,flags):
-    #        self.assertTrue(n.all(flags == 0))
-    #    cb.set_callback(callback)
-    #    bs = BufferSocket()
-    #    bs.set_callback(cb)
-    #    bs.start(PORT)
-    #    xengs = [sim.XEngine(nant=NANT,npol=1,nchan=2048,engine_id=x) \
-    #        for x in range(NANT)]
-    #    xstreams = [x.get_pkt_stream() for x in xengs]
-    #    timestamp = None
-    #    while True:
-    #        for x in xstreams:
-    #            pkt = x.next()
-    #            if timestamp is None: timestamp = pkt.timestamp
-    #            if pkt.timestamp > timestamp + 2: break
-    #            loopback(pkt.pack(), port=PORT)
-    #        time.sleep(.0001)
-    #        if pkt.timestamp > timestamp + 2: break
-    #    bs.stop()
 
 if __name__ == '__main__':
     unittest.main()

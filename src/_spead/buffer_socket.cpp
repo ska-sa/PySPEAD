@@ -102,7 +102,7 @@ void *buffer_socket_net_thread(void *arg) {
     RingItem *this_slot;
 
     socket_t sock = setup_network_listener((short) bs->port);
-    ssize_t num_bytes=0, bufoff=0;
+    ssize_t num_bytes=0;
     int is_ready;
     fd_set readset;
     struct timeval tv;
@@ -152,16 +152,10 @@ void *buffer_socket_net_thread(void *arg) {
                         i += spead_packet_unpack_items(&this_slot->pkt, buf + i);
                         if (num_bytes >= i + this_slot->pkt.payload->length) {
                             i += spead_packet_unpack_payload(&this_slot->pkt, buf + i);
-                            // If there are leftovers (we read part of the next packet) copy them to the
-                            // front of buf and set bufoff
                             //printf("RX: finished reading packet, %d/%d\n", i, num_bytes);
-                            //for (bufoff=0; bufoff < num_bytes - i; bufoff++) {
-                            //    buf[bufoff] = buf[i+bufoff];
-                            //}
                             break;
                         }
                     }
-                    //bufoff = 0;  // bufoff is reset whenever there are enough data for a packet, but no match
                 }
             } else if (is_ready < 0) {
                 if (errno == EINTR) continue;
