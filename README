@@ -18,11 +18,12 @@ ToDo:
       (b) While implementing this, we should also incorportate packet sorting by frame_cnt so that packets can
           arrive out of order, but frames are assembled in order to the extent allowed by the available buffer.
 
-    - The semaphores used in ringbuffer.h should be changed to posix semaphores from pthreads.h.  This is because
-      semaphore.h is not available on MacOSX, and because we were using pthreads.h anyway.
-
     - Confusingly, there are currently two kinds of "frame" in spead.py: one is a SpeadFrame that is generated
       by a receiver, and one is a dictionary that is used by a transmitter.  We should move the frame => packets
       pipeline into C as well, and make all frames of the SpeadFrame type.
-        
-    
+       
+Known Issues: 
+    - Occasionally MacOSX hangs forever in unittest test_spead.py TestTransportUDPrx.test_get_packets_term.  This
+      seems to be b/c no data is being received.  Hanging seems to be more frequent when buffer_socket.cpp
+      has the DEBUG flag set.  Linux doesn't seem to have the same problem.  Cause unknown.
+

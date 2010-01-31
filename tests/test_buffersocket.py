@@ -47,7 +47,6 @@ class TestBufferSocket(unittest.TestCase):
         bs.start(PORT)
         for i in range(10):
             loopback(example_pkt, port=PORT)
-            time.sleep(.0001)
         del(bs)
         loopback(example_pkt, port=PORT)
     def test_get_packets_in_callback(self):
@@ -59,7 +58,9 @@ class TestBufferSocket(unittest.TestCase):
         self.bs.start(PORT)
         for i in range(2):
             loopback(example_pkt, port=PORT)
-            time.sleep(.0001)
+        while packet_in_callback is None:
+            print 'Waiting for packet in callback...'
+            time.sleep(.01)
         self.bs.stop()
         self.bs.unset_callback()
         self.assertEqual(packet_in_callback.n_items, 3)
@@ -76,9 +77,10 @@ class TestBufferSocket(unittest.TestCase):
         self.assertTrue(self.bs.is_running())
         for i in range(10):
             loopback(example_pkt, port=PORT)
-            time.sleep(.0001)
         loopback(term_pkt, port=PORT)
-        time.sleep(.0001)
+        while self.bs.is_running():
+            print 'Waiting for TERM...'
+            time.sleep(.01)
         self.assertFalse(self.bs.is_running())
         self.bs.unset_callback()
 

@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <netinet/in.h>
+//#include <netinet/in.h>
 
 #ifndef htonll
 #ifdef _BIG_ENDIAN

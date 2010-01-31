@@ -5,23 +5,21 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <time.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
+//#include <sys/types.h>
+//#include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <dirent.h>
-#include <sys/param.h>
-#include <sys/stat.h>
-#include <signal.h>
+//#include <arpa/inet.h>
+//#include <netdb.h>
+//#include <dirent.h>
+//#include <sys/param.h>
+//#include <sys/stat.h>
+//#include <signal.h>
 
-#include <pthread.h>
-#include <semaphore.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+//#include <pthread.h>
+//#include <sys/mman.h>
+//#include <sys/stat.h>
+//#include <fcntl.h>
 
 #include "spead_packet.h"
 #include "ring_buffer.h"

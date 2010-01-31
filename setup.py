@@ -2,7 +2,7 @@
 from distutils.core import setup, Extension
 import os, glob
 
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 
 def indir(dir, files): return [dir+f for f in files]
 def globdir(dir, files):
@@ -25,7 +25,6 @@ setup(name = 'spead',
             globdir('src/_spead/',
                 ['*.cpp', '*.c']),
             include_dirs = ['src/_spead/include'],
-            libraries=['rt'],
         )
     ],
     scripts = glob.glob('scripts/*'),

@@ -433,7 +433,7 @@ static PyObject * BsockObject_stop(BsockObject *self) {
     //PyThreadState *_save;
     // Release Python Global Interpreter Lock so that python callback can end
     Py_BEGIN_ALLOW_THREADS
-    buffer_socket_stop(&(self->bs));
+    buffer_socket_stop(&self->bs);
     // Reacquire Python Global Interpreter Lock
     Py_END_ALLOW_THREADS
     Py_INCREF(Py_None);
@@ -446,7 +446,9 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     PyObject *arglist, *rv;
     PyGILState_STATE gstate;
     // Acquire Python Global Interpeter Lock
+    //printf("wrap_bs_pycallback: acquiring GIL\n");
     gstate = PyGILState_Ensure();
+    //printf("wrap_bs_pycallback: got GIL\n");
     bso = (BsockObject *) userdata;  // Recast userdata as reference to a bs
     // Wrap pkt into a SpeadPacket python object
     pkto = PyObject_New(SpeadPktObj, &SpeadPktType);
@@ -460,6 +462,7 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     // Call the python callback with the wrapped-up SpeadPacket
     rv = PyEval_CallObject(bso->pycallback, arglist);
     Py_DECREF(arglist);
+    //printf("wrap_bs_pycallback: releasing GIL\n");
     if (rv == NULL) {
         PyGILState_Release(gstate);
         return 1;

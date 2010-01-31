@@ -339,10 +339,11 @@ class TestTransportUDPrx(unittest.TestCase):
         t_rx = S.TransportUDPrx(50000)
         self.t_tx.write(example_pkt)
         self.t_tx.write(example_pkt)
-        time.sleep(.001)
         self.assertTrue(t_rx.is_running())
         self.t_tx.write(term_pkt)
-        time.sleep(.001)
+        while t_rx.is_running():
+            print 'Waiting for TERM in test_get_packets_term'
+            time.sleep(.01)
         self.assertFalse(t_rx.is_running())
         self.assertEqual(len(t_rx.pkts), 3)
         pkts = [pkt for pkt in t_rx.iterpackets()]
