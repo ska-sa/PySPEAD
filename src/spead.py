@@ -67,6 +67,8 @@ IVAL_BYTES = IVAL_BITS / 8
 IVAL_NULL = '\x00'*IVAL_BYTES
 STREAM_CTRL_TERM_VAL = 0x2
 
+DEBUG = False
+
 pack_types = {
     'i': lambda b: 'int:%d' % b,
     'u': lambda b: 'uint:%d' % b,
@@ -363,14 +365,14 @@ class ItemGroup:
         while len(self._new_names) > 0:
             id = self._names[self._new_names.pop()]
             item = self._items[id]
-            logger.debug('ITEMGROUP.get_frame: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
+            if DEBUG: logger.debug('ITEMGROUP.get_frame: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
             frame[DESCRIPTOR_ID].append(item.to_descriptor_string())
         # Add entries for any items that have changed
         for item in self._items.itervalues():
             if not item.has_changed(): continue
             val = item.to_value_string()
             is_ext = len(val) > IVAL_BYTES or item.size < 0
-            logger.debug('ITEMGROUP.get_frame: Adding entry for id=%d (name=%s)' % (item.id, item.name))
+            if DEBUG: logger.debug('ITEMGROUP.get_frame: Adding entry for id=%d (name=%s)' % (item.id, item.name))
             frame[item.id] = (is_ext, val)
             # Once data is gathered from changed item, mark it as unchanged
             item.unset_changed()
@@ -383,12 +385,13 @@ class ItemGroup:
         # Handle any new DESCRIPTORs first
         items = frame.get_items()
         for d in items[DESCRIPTOR_ID]:
-            logger.debug('ITEMGROUP.update: Processing descriptor')
-            logger.debug(readable_binpacket(d, prepend='ITEMGROUP.update:'))
+            if DEBUG: 
+                logger.debug('ITEMGROUP.update: Processing descriptor')
+                logger.debug(readable_binpacket(d, prepend='ITEMGROUP.update:'))
             self.add_item(from_string=d)
         # Now propagate changed values for known items (unknown ones are ignored)
         for id in self.ids():
-            logger.debug('ITEMGROUP.update: Updating value for id=%d, name=%s' % (id, self._items[id].name))
+            if DEBUG: logger.debug('ITEMGROUP.update: Updating value for id=%d, name=%s' % (id, self._items[id].name))
             try: self._items[id].from_value_string(items[id])
             except(KeyError): continue
 
@@ -408,7 +411,7 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
     logger.info('itergenpackets: Converting a frame into packets')
     # Add descriptors
     for d in descriptors:
-        logger.debug('itergenpackets: Adding a descriptor to header')
+        if DEBUG: logger.debug('itergenpackets: Adding a descriptor to header')
         dlen = len(d)
         hdr.append(pack(ITEM_FMT, 1, DESCRIPTOR_ID, offset))
         heap.append(d); offset += dlen
@@ -416,12 +419,12 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
     for id,(is_ext,val) in frame.iteritems():
         vlen = len(val)
         if is_ext:
-            logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
+            if DEBUG: logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
             hdr.append(pack(ITEM_FMT, 1, id, offset))
             heap.append(val); offset += vlen
         # Pad out to IVAL_BYTES for bits < IVAL_BITS
         else:
-            logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
+            if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
             hdr.append(pack(RAW_ITEM_FMT, 0, id, (IVAL_NULL + val)[-IVAL_BYTES:]))
     heap = ''.join(heap)
     heaplen, payload_cnt, offset = len(heap), 0, 0
@@ -437,7 +440,7 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
         h.append(pack(ITEM_FMT, 0, PAYLOAD_LENGTH_ID, payload_len))
         h.append(pack(ITEM_FMT, 0, PAYLOAD_OFFSET_ID, offset))
         h = ''.join(h)
-        logger.debug('itergenpackets: Made packet with hdrlen=%d, payoff=%d, paylen=%d' \
+        if DEBUG: logger.debug('itergenpackets: Made packet with hdrlen=%d, payoff=%d, paylen=%d' \
             % (len(h), offset, payload_len))
         yield h + heap[offset:offset+payload_len]
         offset += payload_len ; payload_cnt += 1
@@ -468,14 +471,14 @@ class TransportString:
                 if (0,STREAM_CTRL_ID,STREAM_CTRL_TERM_VAL) in pkt.get_items():
                     self.got_term_sig = True    
                     break
-                logger.debug('TRANSPORTSTRING.iterpackets: Yielding packet, offset=%d/%d' % (self.offset, len(self.data)))
+                if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Yielding packet, offset=%d/%d' % (self.offset, len(self.data)))
                 yield pkt
             except(ValueError):
                 if self.offset >= len(self.data) - ITEM_BYTES:
-                    logger.debug('TRANSPORTSTRING.iterpackets: Reached end of string')
+                    if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Reached end of string')
                     break
                 elif self.allow_junk:
-                    logger.debug('TRANSPORTSTRING.iterpackets: Skipping a byte')
+                    if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Skipping a byte')
                     self.offset += 1
                 else: break
         return
@@ -496,16 +499,16 @@ class TransportFile(file):
         while True:
             for pkt in ts.iterpackets(): yield pkt
             if not ts.got_term_sig:
-                logger.debug('TRANSPORTFILE.iterpackets: Reading more data')
+                if DEBUG: logger.debug('TRANSPORTFILE.iterpackets: Reading more data')
                 s = self.read(MAX_PACKET_SIZE)
                 if len(s) == 0:
-                    logger.debug('TRANSPORTFILE.iterpackets: End of file')
+                    if DEBUG: logger.debug('TRANSPORTFILE.iterpackets: End of file')
                     break
                 else: ts = TransportString(ts.data[ts.offset:]+s)
             else: break
         return
     def write(self, s):
-        logger.debug('TRANSPORTFILE.write: Writing %d bytes' % len(s))
+        if DEBUG: logger.debug('TRANSPORTFILE.write: Writing %d bytes' % len(s))
         if self._file: return self._file.write(s)
         else: return file.write(self, s)
 
@@ -544,10 +547,10 @@ class Transmitter:
         '''Convert a frame from an ItemGroup into a series of packets (each of the specified
         maximum packet size) and write those packets to this Transmitter's Transport.  If not
         all ids in a frame are to be sent, ids_to_send should contain the ones to be transmitted.'''
-        logger.debug(readable_frame(frame, prepend='TX.send_frame:'))
+        if DEBUG: logger.debug(readable_frame(frame, prepend='TX.send_frame:'))
         for cnt, p in enumerate(iter_genpackets(frame, max_pkt_size=max_pkt_size)):
             logger.info('TX.send_frame: Sending frame packet %d' % (cnt))
-            logger.debug(readable_binpacket(p, prepend='TX.send_frame,pkt=%d:' % (cnt)))
+            if DEBUG: logger.debug(readable_binpacket(p, prepend='TX.send_frame,pkt=%d:' % (cnt)))
             self.t.write(p)
     def end(self):
         '''Send a packet signalling the end of this stream.'''
@@ -572,7 +575,7 @@ def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
     frame = _spead.SpeadFrame()
     for pkt in tport.iterpackets():
         logger.info('iterframes: Packet with FRAME_CNT=%d' % (pkt.frame_cnt))
-        logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterframes:'))
+        if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterframes:'))
         # Check if we have finished a frame
         try: frame.add_packet(pkt)
         except(ValueError):
