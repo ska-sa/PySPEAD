@@ -33,7 +33,7 @@ NAME_ID = 0x06
 DESCRIPTION_ID = 0x07
 SHAPE_ID = 0x08
 FORMAT_ID = 0x09
-ID_ID = 0x10
+ID_ID = 0x0A
 
 DEFAULT_FMT = (('u',40),)
 HDR_FMT = (('u',24),('u',8),('u',32))
