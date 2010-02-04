@@ -36,21 +36,50 @@
 #define SPEAD_ERR                   -1
 
 // Macros
-#define SPEAD_GET_MAGIC(hdr) (0xFFFFFF & (hdr >> 40))
-#define SPEAD_GET_VERSION(hdr) (0xFF & (hdr >> 32))
-#define SPEAD_GET_NITEMS(hdr) ((int) 0x7FFFFFFF & hdr)
+#define SPEAD_GET_MAGIC(hdr) (0xFFFFFF & ((hdr) >> 40))
+#define SPEAD_GET_VERSION(hdr) (0xFF & ((hdr) >> 32))
+#define SPEAD_GET_NITEMS(hdr) ((int) 0x7FFFFFFF & (hdr))
 
-#define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + n * SPEAD_ITEM_BYTES))[0]))
+#define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + (n) * SPEAD_ITEM_BYTES))[0]))
 #define SPEAD_ITEM_EXT(item) ((bool) 0x1 & (item >> 63))
 #define SPEAD_ITEM_ID(item) ((int) 0x7FFFFF & (item >> 40))
 #define SPEAD_ITEM_VAL(item) ((uint64_t) 0xFFFFFFFFFFLL & item)
 
-// Objects
-typedef struct {
-    bool is_ext;
-    int id;
-    uint64_t val;
-} SpeadRawItem;
+#define SPEAD_HEADER_BUILD(nitems) ((((uint64_t) SPEAD_MAGIC) << 40) | (((uint64_t) SPEAD_VERSION) << 32) | (0xFFFFFFFFLL & (nitems)))
+#define SPEAD_ITEM_BUILD(ext,id,val) (((0x1LL & (ext)) << 63) | ((0x7FFFFFLL & (id)) << 40) | (0xFFFFFFFFFFLL & (val)))
+#define SPEAD_SET_ITEM(data,n,pkitem) (((uint64_t *)(data + (n) * SPEAD_ITEM_BYTES))[0] = htonll(pkitem))
+
+/*___                       _ ____            _        _   
+/ ___| _ __   ___  __ _  __| |  _ \ __ _  ___| | _____| |_ 
+\___ \| '_ \ / _ \/ _` |/ _` | |_) / _` |/ __| |/ / _ \ __|
+ ___) | |_) |  __/ (_| | (_| |  __/ (_| | (__|   <  __/ |_ 
+|____/| .__/ \___|\__,_|\__,_|_|   \__,_|\___|_|\_\___|\__|
+      |_|                                                  */
+
+struct spead_packet {
+    int64_t frame_cnt;
+    int n_items;
+    bool is_stream_ctrl_term;
+    int64_t payload_len;
+    int64_t payload_off;
+    char data[SPEAD_MAX_PACKET_SIZE];
+    char *payload;  // Will point to spot in data where payload starts
+    struct spead_packet *next; // For chaining packets together a frame
+};
+typedef struct spead_packet SpeadPacket;
+
+void spead_packet_init(SpeadPacket *pkt);
+void spead_packet_wipe(SpeadPacket *pkt);
+void spead_packet_copy(SpeadPacket *pkt1, SpeadPacket *pkt2);
+int64_t spead_packet_unpack_header(SpeadPacket *pkt);
+int64_t spead_packet_unpack_items(SpeadPacket *pkt);
+
+/*___                       _ ___ _                 
+/ ___| _ __   ___  __ _  __| |_ _| |_ ___ _ __ ___  
+\___ \| '_ \ / _ \/ _` |/ _` || || __/ _ \ '_ ` _ \ 
+ ___) | |_) |  __/ (_| | (_| || || ||  __/ | | | | |
+|____/| .__/ \___|\__,_|\__,_|___|\__\___|_| |_| |_|
+      |_|                                           */
 
 struct spead_item {
     bool is_valid;
@@ -61,22 +90,15 @@ struct spead_item {
 };
 typedef struct spead_item SpeadItem;
 
-struct spead_payload {
-    char *data;
-    int64_t length;
-    int64_t offset;
-    struct spead_payload *next;
-};
-typedef struct spead_payload SpeadPayload;
+void spead_item_init(SpeadItem *item) ;
+void spead_item_wipe(SpeadItem *item) ;
 
-struct spead_packet {
-    int64_t frame_cnt;
-    int n_items;
-    SpeadRawItem *raw_items;
-    SpeadPayload *payload;
-    struct spead_packet *next;
-};
-typedef struct spead_packet SpeadPacket;
+/*___                       _ _____                         
+/ ___| _ __   ___  __ _  __| |  ___| __ __ _ _ __ ___   ___ 
+\___ \| '_ \ / _ \/ _` |/ _` | |_ | '__/ _` | '_ ` _ \ / _ \
+ ___) | |_) |  __/ (_| | (_| |  _|| | | (_| | | | | | |  __/
+|____/| .__/ \___|\__,_|\__,_|_|  |_|  \__,_|_| |_| |_|\___|
+      |_|                                                   */
 
 typedef struct {
     bool is_valid;
@@ -87,21 +109,8 @@ typedef struct {
     SpeadItem *last_item;
 } SpeadFrame;
 
-// Methods
-void spead_item_init(SpeadItem *item) ;
-void spead_item_wipe(SpeadItem *item) ;
-void spead_payload_init(SpeadPayload *pyld) ;
-void spead_payload_wipe(SpeadPayload *pyld) ;
-void spead_packet_init(SpeadPacket *pkt) ;
-SpeadPacket *spead_packet_clone(SpeadPacket *pkt) ;
-void spead_packet_wipe(SpeadPacket *pkt) ;
 void spead_frame_init(SpeadFrame *frame) ;
 void spead_frame_wipe(SpeadFrame *frame) ;
-
-int64_t spead_packet_unpack_header(SpeadPacket *pkt, char *data) ;
-int64_t spead_packet_unpack_items(SpeadPacket *pkt, char *data) ;
-int64_t spead_packet_unpack_payload(SpeadPacket *pkt, char *data) ;
-
 int spead_frame_add_packet(SpeadFrame *frame, SpeadPacket *pkt) ;
 int spead_frame_finalize(SpeadFrame *frame) ;
 

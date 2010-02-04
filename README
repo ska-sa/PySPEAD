@@ -21,6 +21,9 @@ ToDo:
     - Confusingly, there are currently two kinds of "frame" in spead.py: one is a SpeadFrame that is generated
       by a receiver, and one is a dictionary that is used by a transmitter.  We should move the frame => packets
       pipeline into C as well, and make all frames of the SpeadFrame type.
+
+    - Packet sorting is done as each packet is inserted, but it could be
+      done faster by buffering them and then quicksorting
        
 Known Issues: 
     - Occasionally MacOSX hangs forever in unittest test_spead.py TestTransportUDPrx.test_get_packets_term.  This

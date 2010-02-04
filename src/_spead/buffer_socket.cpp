@@ -3,10 +3,62 @@
 #define DEBUG   0
 #define DBGPRINTF  if (DEBUG) printf
 
+/*___  _             ____         __  __           
+|  _ \(_)_ __   __ _| __ ) _   _ / _|/ _| ___ _ __ 
+| |_) | | '_ \ / _` |  _ \| | | | |_| |_ / _ \ '__|
+|  _ <| | | | | (_| | |_) | |_| |  _|  _|  __/ |   
+|_| \_\_|_| |_|\__, |____/ \__,_|_| |_|  \___|_|   
+               |___/                               */
+
+int ring_buffer_init(RingBuffer *rb, size_t item_count) {
+	// create list items
+	RingItem *head_item = (RingItem *)malloc(item_count * sizeof(RingItem));
+	int i;
+    if (head_item == NULL) return -1;
+	for(i=0; i < item_count; i++) {
+		RingItem *this_item = &head_item[i];
+		RingItem *next_item = &head_item[(i + 1) % item_count];
+		this_item->next = next_item;
+		pthread_mutex_init(&this_item->write_mutex, NULL);
+		pthread_mutex_init(&this_item->read_mutex, NULL);
+		pthread_mutex_lock(&this_item->read_mutex); // On startup, no read mutex should be available
+        //spead_packet_init(this_item->pkt);
+        this_item->pkt = NULL;
+	}
+	rb->list_ptr = head_item;
+	rb->list_length = item_count;
+	rb->write_ptr = head_item;
+	rb->read_ptr = head_item;
+	return 0;
+}
+
+void ring_buffer_wipe(RingBuffer *rb) {
+	RingItem *head_item = rb->list_ptr;
+	size_t item_count = rb->list_length;
+	int i;
+	for(i=0; i<item_count; i++) {
+		RingItem *this_item = &head_item[i];
+		pthread_mutex_destroy(&this_item->write_mutex);
+		pthread_mutex_destroy(&this_item->read_mutex);
+        if (this_item->pkt != NULL) {
+            //spead_packet_wipe(this_item->pkt);
+            free(this_item->pkt);
+        }
+	}
+	free(head_item);
+    rb->list_ptr = NULL;
+}
+
+/*___         __  __           ____             _        _   
+| __ ) _   _ / _|/ _| ___ _ __/ ___|  ___   ___| | _____| |_ 
+|  _ \| | | | |_| |_ / _ \ '__\___ \ / _ \ / __| |/ / _ \ __|
+| |_) | |_| |  _|  _|  __/ |   ___) | (_) | (__|   <  __/ |_ 
+|____/ \__,_|_| |_|  \___|_|  |____/ \___/ \___|_|\_\___|\__|*/
+
 int default_callback(SpeadPacket *pkt, void *userdata) {
-    if (pkt->payload == NULL) return SPEAD_ERR;
-    printf("    Readout packet with frame_cnt=%d, n_items=%d, payload_len=%d\n", 
-            pkt->frame_cnt, pkt->n_items, pkt->payload->length);
+    printf("    Readout packet: frame_cnt=%d, n_items=%d, payload_len=%d\n, payload_off=%d\n", 
+            pkt->frame_cnt, pkt->n_items, pkt->payload_len, pkt->payload_off);
+    free(pkt);
     return 0;
 }
 
@@ -37,7 +89,7 @@ void buffer_socket_set_callback(BufferSocket *bs, int (*cb_func)(SpeadPacket *, 
 int buffer_socket_start(BufferSocket *bs, int port) {
     /* Start socket => buffer and buffer => callback threads */
     if (bs->run_threads != 0) {
-        fprintf(stderr, "BufferSocket already running.\n");
+        fprintf(stderr, "buffer_socket_start: BufferSocket already running.\n");
         return -1;
     }
     bs->port = port;
@@ -54,7 +106,6 @@ int buffer_socket_stop(BufferSocket *bs) {
     if (!bs->run_threads) return -1;
     DBGPRINTF("buffer_socket_stop: Setting bs->run_threads to 0\n");
     bs->run_threads = 0;
-    //ring_buffer_set_all_mutex(bs->ringbuf, 0, 0);
     DBGPRINTF("buffer_socket_stop: Joining net_thread\n");
     pthread_join(bs->net_thread, NULL);
     DBGPRINTF("buffer_socket_stop: Joining data_thread\n");
@@ -77,29 +128,28 @@ void *buffer_socket_data_thread(void *arg) {
         DBGPRINTF("buffer_socket_data_thread: Got read_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
         // Check if this packet has STREAM_CTRL set to STREAM_CTRL_VAL_TERM
         DBGPRINTF("buffer_socket_data_thread: Checking for TERM in slot %d\n", this_slot - bs->ringbuf->list_ptr);
-        for (i=0; i < this_slot->pkt.n_items; i++) {
-            DBGPRINTF("buffer_socket_data_thread: slot %d => item[%d], id=%d, val=%d\n", this_slot - bs->ringbuf->list_ptr, i, this_slot->pkt.raw_items[i].id, this_slot->pkt.raw_items[i].val);
-            if (this_slot->pkt.raw_items[i].id == SPEAD_STREAM_CTRL_ID &&
-                    this_slot->pkt.raw_items[i].val == SPEAD_STREAM_CTRL_TERM_VAL) {
-                DBGPRINTF("buffer_socket_data_thread: Found TERM in slot %d\n", this_slot - bs->ringbuf->list_ptr);
-                gotterm = 1;
-                break;
-            }
+        if (spead_packet_unpack_header(this_slot->pkt) != SPEAD_ERR && spead_packet_unpack_items(this_slot->pkt) != SPEAD_ERR) {
+            gotterm = this_slot->pkt->is_stream_ctrl_term;
+            // Feed data from buffer slot to callback function
+            // The callback steals the reference to pkt, and should free its memory when done
+            // Send packet to callback (even if it's a STREAM_CTRL TERM packet)
+            // Check run_threads first b/c otherwise existence of callback is not guaranteed
+            DBGPRINTF("buffer_socket_data_thread: Entering callback for slot %d (if %d = 1)\n", this_slot - bs->ringbuf->list_ptr, bs->run_threads);
+            if (bs->run_threads && bs->callback(this_slot->pkt, bs->userdata) != 0) { 
+                fprintf(stderr, "buffer_socket_data_thread: Callback returned nonzero.\n");
+                bs->run_threads = 0;
+            } 
+            if (gotterm) bs->run_threads = 0;
+        } else {
+            DBGPRINTF("buffer_socket_data_thread: Got invalid packet in slot %d\n", this_slot - bs->ringbuf->list_ptr);
+            free(this_slot->pkt);
         }
-        // Feed data from buffer slot to callback function
-        // The callback steals the reference to pkt, and should free its memory when done
-        // Send packet to callback (even if it's a STREAM_CTRL TERM packet)
-        // Check run_threads first b/c otherwise existence of callback is not guaranteed
-        DBGPRINTF("buffer_socket_data_thread: Entering callback for slot %d (if %d = 1)\n", this_slot - bs->ringbuf->list_ptr, bs->run_threads);
-        if (bs->run_threads && bs->callback(&this_slot->pkt, bs->userdata) != 0) { 
-            fprintf(stderr, "Data: Callback returned nonzero.\n");
-            bs->run_threads = 0;
-        } 
-        spead_packet_wipe(&this_slot->pkt);
+            
+        // At this point this_slot->pkt is an invalid reference
+        this_slot->pkt = NULL;
         DBGPRINTF("buffer_socket_data_thread: Releasing write_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
         bs->ringbuf->read_ptr = this_slot->next;
         pthread_mutex_unlock(&this_slot->write_mutex);
-        if (gotterm) bs->run_threads = 0;
         DBGPRINTF("buffer_socket_data_thread: Looping with bs->run_threads=%d\n", bs->run_threads);
     }
     DBGPRINTF("buffer_socket_data_thread: Leaving thread\n");
@@ -110,8 +160,9 @@ void *buffer_socket_net_thread(void *arg) {
     /* This thread puts data into a ring buffer from a socket*/
     BufferSocket *bs = (BufferSocket *)arg;
     RingItem *this_slot;
+    SpeadPacket *pkt;
 
-    socket_t sock = setup_network_listener((short) bs->port);
+    socket_t sock = buffer_socket_setup_socket((short) bs->port);
     ssize_t num_bytes=0;
     int is_ready;
     fd_set readset;
@@ -122,7 +173,7 @@ void *buffer_socket_net_thread(void *arg) {
 
     // If sock open fails, end all threads
     if (sock == -1) {
-        fprintf(stderr, "Unable to open socket.\n");
+        fprintf(stderr, "buffer_socket_net_thread: Unable to open socket\n");
         bs->run_threads = 0;
         return NULL;
     }
@@ -136,7 +187,6 @@ void *buffer_socket_net_thread(void *arg) {
         if (is_ready <= 0) {
             if (is_ready != 0 && errno != EINTR) {
                 fprintf(stderr, "Unable to receive packets.\n");
-                DBGPRINTF("Unable to receive packets.\n");
                 bs->run_threads = 0;
             }
             continue;
@@ -149,21 +199,17 @@ void *buffer_socket_net_thread(void *arg) {
         DBGPRINTF("buffer_socket_net_thread: Got write_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
         
         // For UDP, recvfrom returns exactly one packet
-        num_bytes = recvfrom(sock, buf, SPEAD_MAX_PACKET_SIZE, 0, NULL, NULL);
+        pkt = (SpeadPacket *) malloc(sizeof(SpeadPacket));
+        if (pkt == NULL) {
+            fprintf(stderr, "buffer_socket_net_thread: Unable to allocate memory for packet\n");
+            bs->run_threads = 0;
+            return NULL;
+        }
+        spead_packet_init(pkt);
+        num_bytes = recvfrom(sock, pkt->data, SPEAD_MAX_PACKET_SIZE, 0, NULL, NULL);
         DBGPRINTF("buffer_socket_net_thread: Received %d bytes\n", num_bytes);
-        //for (i=0;i<num_bytes;i++) {
-        //    if (i % 8 == 0) DBGPRINTF("\n");
-        //    DBGPRINTF("%02x ", (uint8_t)buf[i]);
-        //}
-        //DBGPRINTF("\n");
-        if (num_bytes < SPEAD_ITEM_BYTES) continue;
-        i = spead_packet_unpack_header(&this_slot->pkt, buf);
-        if (i == SPEAD_ERR || num_bytes < i + this_slot->pkt.n_items * SPEAD_ITEM_BYTES) continue;
-        j = spead_packet_unpack_items(&this_slot->pkt, buf + i);
-        i += j;
-        if (j == SPEAD_ERR || num_bytes < i + this_slot->pkt.payload->length) continue;
-        spead_packet_unpack_payload(&this_slot->pkt, buf + i);
         DBGPRINTF("buffer_socket_net_thread: Releasing read_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
+        this_slot->pkt = pkt;
         bs->ringbuf->write_ptr = this_slot->next;
         pthread_mutex_unlock(&this_slot->read_mutex);
         DBGPRINTF("buffer_socket_net_thread: Looping with bs->run_threads=%d\n", bs->run_threads);
@@ -173,27 +219,21 @@ void *buffer_socket_net_thread(void *arg) {
     return NULL;
 }
 
-socket_t setup_network_listener(short port) {
+socket_t buffer_socket_setup_socket(short port) {
     /* Open up a UDP socket on the specified port for receiving data */
     int sock = -1;
     struct sockaddr_in my_addr; // server's address information
-
-    // create a new UDP socket descriptor
-    sock = socket(PF_INET, SOCK_DGRAM, 0);
+    sock = socket(PF_INET, SOCK_DGRAM, 0); // create a new UDP socket descriptor
     if (sock == -1) return -1;
-
     // initialize local address struct
     my_addr.sin_family = AF_INET; // host byte order
     my_addr.sin_port = htons(port); // short, network byte order
     my_addr.sin_addr.s_addr = htonl(INADDR_ANY); // listen on all interfaces
     memset(my_addr.sin_zero, 0, sizeof(my_addr.sin_zero));
-
     // bind socket to local address
     if (bind(sock, (SA *)&my_addr, sizeof(my_addr)) == -1) return -1;
-
     // prevent "address already in use" errors
     const int on = 1;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&on, sizeof(on)) == -1) return -1;
-
     return sock;
 }

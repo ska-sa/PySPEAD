@@ -45,10 +45,9 @@ class TestBufferSocket(unittest.TestCase):
         def callback(s): pass
         bs.set_callback(callback)
         bs.start(PORT)
-        for i in range(10):
-            loopback(example_pkt, port=PORT)
+        for i in range(100): loopback(example_pkt, port=PORT)
         del(bs)
-        loopback(example_pkt, port=PORT)
+        for i in range(100): loopback(example_pkt, port=PORT)
     def test_get_packets_in_callback(self):
         def callback(pkt):
             #print pkt, pkt.n_items

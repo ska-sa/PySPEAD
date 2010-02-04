@@ -62,10 +62,22 @@ class TestSpeadPacket(unittest.TestCase):
         pkt = _S.SpeadPacket()
         self.assertEqual(pkt.n_items, 0)
         self.assertEqual(pkt.frame_cnt, -1)
-        self.assertEqual(pkt.get_payload(),'')
-        self.assertEqual(pkt.get_items(),())
-        pkt.frame_cnt = 5
+        self.assertFalse(pkt.is_stream_ctrl_term)
+        self.assertEqual(pkt.payload_len,0)
+        self.assertEqual(pkt.payload_off,0)
+        self.assertEqual(pkt.payload,'')
+        self.assertEqual(pkt.items,())
+        def f1(): pkt.frame_cnt = 5
+        self.assertRaises(AttributeError, f1)
+        pkt.items = [(0,S.FRAME_CNT_ID, 5), (0,S.PAYLOAD_LENGTH_ID,8), (0,S.PAYLOAD_OFFSET_ID,8)]
+        pkt.payload = 'abcdefgh'
+        self.assertEqual(pkt.n_items, 3)
         self.assertEqual(pkt.frame_cnt, 5)
+        self.assertFalse(pkt.is_stream_ctrl_term)
+        self.assertEqual(pkt.payload_len,8)
+        self.assertEqual(pkt.payload_off,8)
+        self.assertEqual(pkt.payload,'abcdefgh')
+        self.assertEqual(pkt.items,((0,S.FRAME_CNT_ID,5), (0,S.PAYLOAD_LENGTH_ID,8), (0,S.PAYLOAD_OFFSET_ID,8)))
     def test_unpack_piecewise(self):
         # Read header
         p = ex_pkts['normal']
@@ -77,19 +89,23 @@ class TestSpeadPacket(unittest.TestCase):
         self.assertRaises(ValueError, lambda: self.pkt.unpack_items(''))
         self.assertEqual(self.pkt.unpack_items(p[8:]), 24)
         self.assertEqual(self.pkt.frame_cnt, 3)
+        self.assertEqual(self.pkt.payload_len, 8)
+        self.assertEqual(self.pkt.items, ((0,S.FRAME_CNT_ID,3),(1,0x3333,0),(0,S.PAYLOAD_LENGTH_ID,8)))
         # Read payload
-        self.assertRaises(ValueError, lambda: self.pkt.unpack_payload(''))
-        self.assertEqual(self.pkt.unpack_payload(p[8+24:]), 8)
-        self.assertEqual(self.pkt.get_payload(), struct.pack('>d', 3.1415))
+        def f1(): self.pkt.payload = ''
+        self.assertRaises(ValueError, f1)
+        self.pkt.payload = p[8+24:]
+        self.assertEqual(self.pkt.payload, struct.pack('>d', 3.1415))
     def test_unpack(self):
         p = ex_pkts['normal']
         self.assertRaises(ValueError, lambda: self.pkt.unpack(''))
+        self.assertRaises(ValueError, lambda: self.pkt.unpack('abcdefgh'))
         self.assertEqual(self.pkt.unpack(p), len(p))
-        self.assertEqual(self.pkt.get_payload(), struct.pack('>d', 3.1415))
-    def test_get_items(self):
+        self.assertEqual(self.pkt.payload, struct.pack('>d', 3.1415))
+    def test_pack(self):
         p = ex_pkts['normal']
         self.assertEqual(self.pkt.unpack(p), len(p))
-        self.assertEqual(self.pkt.get_items(), ((0,S.FRAME_CNT_ID,3), (1,0x3333,0), (0,S.PAYLOAD_LENGTH_ID,8)))
+        self.assertEqual(self.pkt.pack(), p)
     
 class TestSpeadFrame(unittest.TestCase):
     def setUp(self):

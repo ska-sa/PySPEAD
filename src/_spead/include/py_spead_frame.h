@@ -7,6 +7,7 @@
 typedef struct {
     PyObject_HEAD
     SpeadFrame frame;
+    PyObject *list_of_pypkts;
 } SpeadFrameObj;
 
 extern PyTypeObject SpeadFrameType;

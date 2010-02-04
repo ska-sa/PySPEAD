@@ -144,7 +144,7 @@ def readable_binpacket(pkt, prepend='', show_payload=False):
 def readable_speadpacket(pkt, prepend='', show_payload=False):
     o, rv = 0, ['', 'vvv PACKET ' + 'v'*(50-len(prepend))]
     rv.append('FRAME_CNT=%d' % (pkt.frame_cnt))
-    for cnt,(is_ext,id,val) in enumerate(pkt.get_items()):
+    for cnt,(is_ext,id,val) in enumerate(pkt.items):
         if is_ext: val = 'OFF=%s' % (hex(val)[2:])
         else: val = 'VAL=%s' % (hex(val)[2:])
         try: rv.append('ITEM%02d: [ IS_EXT=%d | NAME=%16s | %s ]' % (cnt, is_ext, NAME[id], val))
@@ -468,7 +468,7 @@ class TransportString:
             try:
                 self.offset += pkt.unpack(self.data[self.offset:])
                 # Check if this pkt has a stream terminator
-                if (0,STREAM_CTRL_ID,STREAM_CTRL_TERM_VAL) in pkt.get_items():
+                if pkt.is_stream_ctrl_term:
                     self.got_term_sig = True    
                     break
                 if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Yielding packet, offset=%d/%d' % (self.offset, len(self.data)))

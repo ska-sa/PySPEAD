@@ -6,7 +6,7 @@
 // Python object that holds a SpeadPacket
 typedef struct {
     PyObject_HEAD
-    SpeadPacket pkt;
+    SpeadPacket *pkt;
 } SpeadPktObj;
 
 extern PyTypeObject SpeadPktType;
