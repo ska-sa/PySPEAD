@@ -101,7 +101,7 @@ PyObject *SpeadPktObj_unpack(SpeadPktObj *self, PyObject *args) {
     }
     spead_packet_unpack_items(self->pkt);
     if (SPEAD_ITEM_BYTES + item_bytes + self->pkt->payload_len > SPEAD_MAX_PACKET_SIZE) {
-        PyErr_Format(PyExc_ValueError, "packet size exceeds max of %d bytes", size, SPEAD_MAX_PACKET_SIZE);
+        PyErr_Format(PyExc_ValueError, "packet size (%d) exceeds max of %d bytes", size, SPEAD_MAX_PACKET_SIZE);
         return NULL;
     }
     for (i=0; i < self->pkt->payload_len; i++) {
@@ -530,10 +530,9 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     //printf("wrap_bs_pycallback: got GIL\n");
     bso = (BsockObject *) userdata;  // Recast userdata as reference to a bs
     // Wrap pkt into a SpeadPacket python object
-    pkto = PyObject_New(SpeadPktObj, &SpeadPktType); // This does not call SpeadPktObj_init!
+    pkto = PyObject_NEW(SpeadPktObj, &SpeadPktType); // This does not call SpeadPktObj_init!
     // Deviously swap in reference to this pkt instead of initializing
     // Python will take care of freeing pkt when pkto dies.
-    //free(pkto->pkt);
     pkto->pkt = pkt;
     arglist = Py_BuildValue("(O)", (PyObject *)pkto);
     // Call the python callback with the wrapped-up SpeadPacket

@@ -435,14 +435,12 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
         # XXX Need to check that # of changed items fits in MAX_PACKET_SIZE.
         if payload_cnt == 0: h = items
         else: h = [(0, FRAME_CNT_ID, unpack(DEFAULT_FMT, frame[FRAME_CNT_ID][1])[0][0])]
-        #h.insert(0, pack(HDR_FMT, SPEAD_MAGIC, VERSION, len(h)+2))
         hlen = ITEM_BYTES * (len(h) + 3) # 3 for the spead hdr, payload_len and payload_off
         payload_len = min(MAX_PACKET_SIZE - hlen, heaplen - offset)
         h.append((0, PAYLOAD_LENGTH_ID, payload_len))
         h.append((0, PAYLOAD_OFFSET_ID, offset))
         pkt.items = h
         pkt.payload = heap[offset:offset+payload_len]
-        #h = ''.join(h)
         if DEBUG: logger.debug('itergenpackets: Made packet with hlen=%d, payoff=%d, paylen=%d' \
             % (len(h), offset, payload_len))
         yield pkt.pack()

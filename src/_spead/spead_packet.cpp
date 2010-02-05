@@ -236,7 +236,6 @@ int spead_frame_finalize(SpeadFrame *frame) {
                 //printf("Allocating item of length %d\n", item->length);
                 if (item->val == NULL) return SPEAD_ERR;
                 // Value copy here is hardcoded to big/network endian
-                //((uint64_t *)item->val)[0] = htonll(rawitem->val);
                 for (o=0; o < item->length; o++) {
                     // since val is in the lsbs of rawitem1, can just grab it
                     item->val[o] = 0xFF & (rawitem1 >> (8 * (SPEAD_ITEM_VAL_BYTES - o - 1))); // 8 bits per byte

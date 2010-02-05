@@ -22,7 +22,6 @@ int ring_buffer_init(RingBuffer *rb, size_t item_count) {
 		pthread_mutex_init(&this_item->write_mutex, NULL);
 		pthread_mutex_init(&this_item->read_mutex, NULL);
 		pthread_mutex_lock(&this_item->read_mutex); // On startup, no read mutex should be available
-        //spead_packet_init(this_item->pkt);
         this_item->pkt = NULL;
 	}
 	rb->list_ptr = head_item;
@@ -40,10 +39,7 @@ void ring_buffer_wipe(RingBuffer *rb) {
 		RingItem *this_item = &head_item[i];
 		pthread_mutex_destroy(&this_item->write_mutex);
 		pthread_mutex_destroy(&this_item->read_mutex);
-        if (this_item->pkt != NULL) {
-            //spead_packet_wipe(this_item->pkt);
-            free(this_item->pkt);
-        }
+        if (this_item->pkt != NULL) free(this_item->pkt);
 	}
 	free(head_item);
     rb->list_ptr = NULL;
@@ -119,7 +115,7 @@ void *buffer_socket_data_thread(void *arg) {
     /* This thread reads data out of a ring buffer through a callback */
     BufferSocket *bs = (BufferSocket *)arg;
     RingItem *this_slot;
-    int i, gotterm=0;
+    int gotterm=0;
 
     while (bs->run_threads) {
         // Wait for next buffer slot to fill up
@@ -167,9 +163,6 @@ void *buffer_socket_net_thread(void *arg) {
     int is_ready;
     fd_set readset;
     struct timeval tv;
-
-    char buf[SPEAD_MAX_PACKET_SIZE];
-    int i, j;
 
     // If sock open fails, end all threads
     if (sock == -1) {
