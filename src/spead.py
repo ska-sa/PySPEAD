@@ -406,43 +406,46 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
     iterate over the set of binary SPEAD packets that propagate this data
     to a receiver.  The stream will be broken into packets of the specified maximum size.'''
     assert(frame.has_key(FRAME_CNT_ID))  # Every frame has to have a FRAME_CNT
+    pkt = _spead.SpeadPacket()
     descriptors = frame.pop(DESCRIPTOR_ID, [])
-    hdr, heap, offset = [], [], 0
+    items, heap, offset = [], [], 0
     logger.info('itergenpackets: Converting a frame into packets')
     # Add descriptors
     for d in descriptors:
         if DEBUG: logger.debug('itergenpackets: Adding a descriptor to header')
         dlen = len(d)
-        hdr.append(pack(ITEM_FMT, 1, DESCRIPTOR_ID, offset))
+        items.append((1, DESCRIPTOR_ID, offset))
         heap.append(d); offset += dlen
     # Add other items
     for id,(is_ext,val) in frame.iteritems():
         vlen = len(val)
         if is_ext:
             if DEBUG: logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
-            hdr.append(pack(ITEM_FMT, 1, id, offset))
+            items.append((1, id, offset))
             heap.append(val); offset += vlen
         # Pad out to IVAL_BYTES for bits < IVAL_BITS
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
-            hdr.append(pack(RAW_ITEM_FMT, 0, id, (IVAL_NULL + val)[-IVAL_BYTES:]))
+            items.append((0, id, unpack(DEFAULT_FMT, val)[0][0]))
     heap = ''.join(heap)
     heaplen, payload_cnt, offset = len(heap), 0, 0
     while True:
         # The first packet contains all of the header entries for the items that changed
         # Subsequent packets are continuations that increment payload_cnt until all data is sent
         # XXX Need to check that # of changed items fits in MAX_PACKET_SIZE.
-        if payload_cnt == 0: h = hdr
-        else: h = [pack(RAW_ITEM_FMT, 0, FRAME_CNT_ID, frame[FRAME_CNT_ID][1])]
-        h.insert(0, pack(HDR_FMT, SPEAD_MAGIC, VERSION, len(h)+2))
-        hdrlen = ITEM_BYTES * (len(h) + 2)
-        payload_len = min(MAX_PACKET_SIZE - hdrlen, heaplen - offset)
-        h.append(pack(ITEM_FMT, 0, PAYLOAD_LENGTH_ID, payload_len))
-        h.append(pack(ITEM_FMT, 0, PAYLOAD_OFFSET_ID, offset))
-        h = ''.join(h)
-        if DEBUG: logger.debug('itergenpackets: Made packet with hdrlen=%d, payoff=%d, paylen=%d' \
+        if payload_cnt == 0: h = items
+        else: h = [(0, FRAME_CNT_ID, unpack(DEFAULT_FMT, frame[FRAME_CNT_ID][1])[0][0])]
+        #h.insert(0, pack(HDR_FMT, SPEAD_MAGIC, VERSION, len(h)+2))
+        hlen = ITEM_BYTES * (len(h) + 3) # 3 for the spead hdr, payload_len and payload_off
+        payload_len = min(MAX_PACKET_SIZE - hlen, heaplen - offset)
+        h.append((0, PAYLOAD_LENGTH_ID, payload_len))
+        h.append((0, PAYLOAD_OFFSET_ID, offset))
+        pkt.items = h
+        pkt.payload = heap[offset:offset+payload_len]
+        #h = ''.join(h)
+        if DEBUG: logger.debug('itergenpackets: Made packet with hlen=%d, payoff=%d, paylen=%d' \
             % (len(h), offset, payload_len))
-        yield h + heap[offset:offset+payload_len]
+        yield pkt.pack()
         offset += payload_len ; payload_cnt += 1
         if offset >= heaplen: break
     logger.info('itergenpackets: Done converting a frame into packets')
