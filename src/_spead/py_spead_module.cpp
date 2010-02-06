@@ -646,9 +646,105 @@ PyTypeObject BsockType = {
 |____/| .__/ \___|\__,_|\__,_| |_|  |_|\___/ \__,_|\__,_|_|\___|
       |_|                                                       */
 
+PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *rv, *tup;
+    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE];
+    Py_ssize_t fmt_len, data_len;
+    uint32_t fmt_item;
+    uint64_t u64;
+    int64_t i64;
+    uint32_t u32;
+    uint8_t u8;
+    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits=0, flag=0, offset=0;
+    long cnt=1, j;
+    static char *kwlist[] = {"fmt", "data", "cnt", "offset", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#s#|li", kwlist, &fmt, &fmt_len, &data, &data_len, &cnt, &offset))
+        return NULL;
+    if (offset >= 8) {
+        PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
+        return NULL;
+    }
+    if (fmt_len <= 0 || fmt_len % SPEAD_FMT_BYTES != 0 || fmt_len / SPEAD_FMT_BYTES > SPEAD_MAX_FMT_SIZE) {
+        PyErr_Format(PyExc_ValueError, "Invalid fmt string");
+        return NULL;
+    }
+    // Validate fmt
+    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    for (i=0; i < n_fmts; i++) {
+        fmt_item = SPEAD_FMT(fmt,i);
+        fmt_types[i] = SPEAD_FMT_GET_TYPE(fmt_item);
+        fmt_bits[i] = SPEAD_FMT_GET_NBITS(fmt_item);
+        tot_fmt_bits += fmt_bits[i];
+        switch (fmt_types[i]) {
+            case 'i': case 'u': break;
+            case 'f':
+                switch (fmt_bits[i]) {
+                    case 32: case 64: break;
+                    default: flag = 1; break;
+                }
+                break;
+            case 'c': if (fmt_bits[i] != 8) flag = 1; break;
+            case '0': // This isn't supported at this level--it must be accounted for at a higher level
+            default: flag = 1; break;
+        }
+        if (flag) break;
+    }
+    if (flag) {
+        PyErr_Format(PyExc_ValueError, "Invalid fmt string");
+        return NULL;
+    }
+        
+    // Check if this is a dynamically sized variable
+    if (cnt < 0) cnt = data_len * 8 / tot_fmt_bits; // 8 bits per byte
+    // Make sure we have enough data
+    if (cnt * tot_fmt_bits + offset > data_len * 8) {
+        PyErr_Format(PyExc_ValueError, "Not enough data to unpack fmt");
+        return NULL;
+    }
+
+    // Create our return tuple
+    rv = PyTuple_New(cnt);
+    if (rv == NULL) return NULL;
+    for (j=0; j < cnt; j++) {
+        tup = PyTuple_New(n_fmts);
+        if (tup == NULL) return NULL;
+        for (i=0; i < n_fmts; i++) {
+            switch(fmt_types[i]) {
+                case 'u':
+                    u64 = spead_u64_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
+                    if (fmt_bits[i] < 64) {
+                        PyTuple_SET_ITEM(tup, i, PyInt_FromLong((long) u64)); break;
+                    } else {
+                        PyTuple_SET_ITEM(tup, i, PyLong_FromUnsignedLong((unsigned long) u64)); break;
+                    }
+                case 'i':
+                    i64 = spead_i64_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
+                    PyTuple_SET_ITEM(tup, i, PyInt_FromLong((long) i64)); break;
+                case 'f':
+                    if (fmt_bits[i] == 32) {
+                        u32 = spead_u32_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
+                        PyTuple_SET_ITEM(tup, i, PyFloat_FromDouble((double) ((float *)&u32)[0])); break;
+                    } else {
+                        u64 = spead_u64_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
+                        PyTuple_SET_ITEM(tup, i, PyFloat_FromDouble(((double *)&u64)[0])); break;
+                    }
+                    break;
+                case 'c':
+                    u8 = SPEAD_U8_ALIGN(data + sizeof(char)*(offset/8), offset % 8);
+                    PyTuple_SET_ITEM(tup, i, PyString_FromStringAndSize(((char *)&u8), 1)); break;
+            }
+            offset += fmt_bits[i];
+        }
+        PyTuple_SET_ITEM(rv, j, tup);
+    }
+    return rv;        
+}
+
 // Module methods
 static PyMethodDef spead_methods[] = {
-    {NULL}  /* Sentinel */
+    {"unpack", (PyCFunction)spead_unpack, METH_VARARGS | METH_KEYWORDS,
+        "unpack(fmt, data, cnt=1, offset=0)\nReturn tuple of fmt read from the binary string 'data'"},
+    {NULL, NULL}  /* Sentinel */
 };
 
 #ifndef PyMODINIT_FUNC  /* declarations for DLL import/export */

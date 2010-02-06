@@ -30,8 +30,10 @@
 #define SPEAD_STREAM_CTRL_TERM_VAL  0x02
 
 #define SPEAD_ITEM_BYTES            8
+#define SPEAD_FMT_BYTES             4
 #define SPEAD_ITEM_VAL_BYTES        5
 #define SPEAD_MAX_PACKET_SIZE       9200
+#define SPEAD_MAX_FMT_SIZE          1024
 
 #define SPEAD_ERR                   -1
 
@@ -48,6 +50,19 @@
 #define SPEAD_HEADER_BUILD(nitems) ((((uint64_t) SPEAD_MAGIC) << 40) | (((uint64_t) SPEAD_VERSION) << 32) | (0xFFFFFFFFLL & (nitems)))
 #define SPEAD_ITEM_BUILD(ext,id,val) (((0x1LL & (ext)) << 63) | ((0x7FFFFFLL & (id)) << 40) | (0xFFFFFFFFFFLL & (val)))
 #define SPEAD_SET_ITEM(data,n,pkitem) (((uint64_t *)(data + (n) * SPEAD_ITEM_BYTES))[0] = htonll(pkitem))
+
+#define SPEAD_FMT(data,n) (ntohl(((uint32_t *)(data + (n) * SPEAD_FMT_BYTES))[0]))
+#define SPEAD_FMT_GET_TYPE(fmt) ((char) 0xFF & (fmt >> 24))
+#define SPEAD_FMT_GET_NBITS(fmt) ((int) 0xFFFFFF & fmt)
+
+#define SPEAD_U8_ALIGN(data,off) \
+    ((off == 0) ? \
+    ((uint8_t *)data)[0] : \
+    (((uint8_t *)data)[0] << off) | (((uint8_t *)data)[1] >> (8*sizeof(uint8_t) - off)))
+
+uint32_t spead_u32_align(char *data, int start_bit, int n_bits);
+uint64_t spead_u64_align(char *data, int start_bit, int n_bits);
+int64_t spead_i64_align(char *data, int start_bit, int n_bits);
 
 /*___                       _ ____            _        _   
 / ___| _ __   ___  __ _  __| |  _ \ __ _  ___| | _____| |_ 
@@ -69,7 +84,6 @@ struct spead_packet {
 typedef struct spead_packet SpeadPacket;
 
 void spead_packet_init(SpeadPacket *pkt);
-void spead_packet_wipe(SpeadPacket *pkt);
 void spead_packet_copy(SpeadPacket *pkt1, SpeadPacket *pkt2);
 int64_t spead_packet_unpack_header(SpeadPacket *pkt);
 int64_t spead_packet_unpack_items(SpeadPacket *pkt);

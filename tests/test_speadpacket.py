@@ -55,6 +55,57 @@ ex_pkts = {
         struct.pack('>d', 3.1415)]),
 }
 
+class TestSpeadMethods(unittest.TestCase):
+    def test_unpack_sanity(self):
+        self.assertRaises(ValueError, _S.unpack, '', '')
+        self.assertRaises(ValueError, _S.unpack, 'abc', 'def')
+        self.assertRaises(ValueError, _S.unpack, 'f\x00\x00\xff', 'abcdefgh')
+        self.assertRaises(ValueError, _S.unpack, 'f\x00\x00\x20', 'abc')
+        self.assertRaises(ValueError, _S.unpack, 'u\x00\x00\x20', '\x00\x00\x00\x00', offset=1)
+        self.assertRaises(ValueError, _S.unpack, 'u\x00\x00\x20', '\x00\x00\x00\x00', offset=8)
+        self.assertRaises(ValueError, _S.unpack, 'u\x00\x00\x03', '\x00', offset=6)
+    def test_unpack_unsigned(self):
+        self.assertEqual(_S.unpack('u\x00\x00\x01', '\x80'), ((1,),))
+        self.assertEqual(_S.unpack('u\x00\x00\x01', '\x80', offset=1), ((0,),))
+        for i in range(2,65):
+            fmt = 'u\x00' + struct.pack('>H', i)
+            val = '\xc0' + '\x00' * 8
+            self.assertEqual(_S.unpack(fmt, val), ((2**(i-1) + 2**(i-2),),))
+            self.assertEqual(_S.unpack(fmt, val, offset=1), ((2**(i-1),),))
+    def test_unpack_signed(self):
+        self.assertEqual(_S.unpack('i\x00\x00\x01', '\x80'), ((-1,),))
+        self.assertEqual(_S.unpack('i\x00\x00\x01', '\x80', offset=1), ((0,),))
+        for i in range(2,65):
+            fmt = 'i\x00' + struct.pack('>H', i)
+            val1 = '\xff' * 8
+            val2 = '\x40' + '\x00' * 8
+            val3 = '\x80' + '\x00' * 7
+            self.assertEqual(_S.unpack(fmt, val1), ((-1,),))
+            self.assertEqual(_S.unpack(fmt, val2), ((2**(i-2),),))
+            self.assertEqual(_S.unpack(fmt, val2, offset=1), _S.unpack(fmt, val3))
+    def test_unpack_float(self):
+        fmt32 = 'f\x00\x00\x20'
+        fmt64 = 'f\x00\x00\x40'
+        self.assertAlmostEqual(_S.unpack(fmt32, struct.pack('>f', 3.1415))[0][0], 3.1415, 8)
+        self.assertEqual(_S.unpack(fmt64, struct.pack('>d', 3.1415)), ((3.1415,),))
+        data1 = '\x01\x23\x45\x67'
+        data2 = '\x00\x12\x34\x56\x78'
+        self.assertEqual(_S.unpack(fmt32, data1), _S.unpack(fmt32, data2, offset=4))
+    def test_unpack_char(self):
+        fmt = 'c\x00\x00\x08'
+        self.assertEqual(_S.unpack(fmt, '\x67')[0][0], 'g')
+        self.assertEqual(_S.unpack(fmt, '\x06\x70', offset=4)[0][0], 'g')
+        self.assertEqual(_S.unpack(fmt, 'abcdefgh', cnt=4), (('a',),('b',),('c',),('d',)))
+    def test_long_fmt(self):
+        fmt = 'c\x00\x00\x08u\x00\x00\x20f\x00\x00\x40'
+        data = []
+        for i in range(8): data += ['z', i, 3.1]
+        data = struct.pack('>'+'cId'*8, *data)
+        for i, (c,u,d) in enumerate(_S.unpack(fmt, data)):
+            self.assertEqual(c, 'z')
+            self.assertEqual(i, u)
+            self.assertEqual(d, 3.1)
+
 class TestSpeadPacket(unittest.TestCase):
     def setUp(self):
         self.pkt = _S.SpeadPacket()

@@ -37,7 +37,8 @@ ID_ID = 0x0A
 
 DEFAULT_FMT = (('u',40),)
 HDR_FMT = (('u',24),('u',8),('u',32))
-RAW_ITEM_FMT = (('u',1),('u',23),('c',40))
+#RAW_ITEM_FMT = (('u',1),('u',23),('c',40))
+RAW_ITEM_FMT = (('u',1),('u',23)) + (('c',8),) * 5
 ITEM_FMT = (('u',1),('u',23),('u',40))
 ID_FMT = (('u',16),('u',24))
 SHAPE_FMT = (('u',8),('u',56))
@@ -114,15 +115,22 @@ def unpack_iter(fmt, data, cnt=1, offset=0):
         for c in range(cnt): yield data.readlist(cfmt)
         return
 
+#def unpack(fmt, data, cnt=1, offset=0):
+#    return [u for u in unpack_iter(fmt, data, cnt=cnt, offset=offset)]
 def unpack(fmt, data, cnt=1, offset=0):
-    return [u for u in unpack_iter(fmt, data, cnt=cnt, offset=offset)]
+    cfmt = ''.join(pack(FORMAT_FMT, *f) for f in fmt)
+    if type(data) == bitstring.BitString: data = data.bytes
+    return _spead.unpack(cfmt, data, cnt=cnt, offset=offset)
 
 def readable_payload(payload, prepend=''):
     bs = bitstring.BitString(bytes=payload)
     return prepend + bs.hex[2:]
 
 def readable_header(h, prepend=''):
-    is_ext, id, raw_val = unpack(RAW_ITEM_FMT, h)[0]
+    #is_ext, id, raw_val = unpack(RAW_ITEM_FMT, h)[0]
+    rv = unpack(RAW_ITEM_FMT, h)[0]
+    is_ext, id = rv[:2]
+    raw_val = ''.join(rv[2:])
     bs = bitstring.BitString(bytes=raw_val)
     if is_ext: val = 'OFF=%s' % (bs.hex[2:])
     else: val = 'VAL=%s' % (bs.hex[2:])

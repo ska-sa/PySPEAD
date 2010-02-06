@@ -15,8 +15,8 @@ term_pkt = ''.join([
     S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
 
 example_frame = {
-    S.FRAME_CNT_ID: '\x00\x00\x00\x00\x03',
-    0x3333: struct.pack('>d', 3.1415),
+    S.FRAME_CNT_ID: (0, '\x00\x00\x00\x00\x03'),
+    0x3333: (1, struct.pack('>d', 3.1415)),
 }
 
 class RawUDPrx:
@@ -53,14 +53,14 @@ class TestMethods(unittest.TestCase):
             'u\x00\x00\x08')
     def test_unpack(self):
         self.assertEqual(S.unpack(S.DEFAULT_FMT,
-            '\x01\x00\x00\x01\x00'), [[2**32+2**8]])
-        self.assertEqual(S.unpack(S.ITEM_FMT,
-            '\x00\x00\x04\x00\x00\x00\x00\x08'), [[0, 4, 8]]) 
-        self.assertEqual(S.unpack(S.FORMAT_FMT, 'u\x00\x00\x08'), [['u', 8]]) 
+            '\x01\x00\x00\x01\x00')[0][0], 2**32+2**8)
+        self.assertEqual(list(S.unpack(S.ITEM_FMT,
+            '\x00\x00\x04\x00\x00\x00\x00\x08')[0]), [0, 4, 8]) 
+        self.assertEqual(list(S.unpack(S.FORMAT_FMT, 'u\x00\x00\x08')[0]), ['u', 8]) 
         bs = bitstring.BitString(bytes='\x01\x00\x00\x01\x00')
-        self.assertEqual(S.unpack(S.DEFAULT_FMT, bs), [[2**32+2**8]])
-        self.assertEqual(S.unpack(S.STR_FMT, 'abcde', cnt=4), [[c] for c in 'abcd'])
-        self.assertEqual(S.unpack(S.STR_FMT, 'abcde', cnt=-1), [[c] for c in 'abcde'])
+        self.assertEqual(S.unpack(S.DEFAULT_FMT, bs)[0][0], 2**32+2**8)
+        self.assertEqual(''.join([a[0] for a in S.unpack(S.STR_FMT, 'abcde', cnt=4)]), 'abcd')
+        self.assertEqual(''.join([a[0] for a in S.unpack(S.STR_FMT, 'abcde', cnt=-1)]), 'abcde')
     def test_readable_header(self):
         for o in range(8, 32, 8):
             h = example_pkt[o:o+8]
@@ -90,10 +90,13 @@ class TestMethods(unittest.TestCase):
         pkts = [p for p in S.iter_genpackets(frame)]
         self.assertEqual(len(pkts), 1)
         pkt = pkts[0]
-        self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+        self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
             [S.SPEAD_MAGIC, S.VERSION, 4])
         for i in range(1,4):
-            is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
+            #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
+            rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
+            is_ext, id = rv[:2]
+            raw_val = ''.join(rv[2:])
             if id == 0x1234:
                 self.assertEqual(is_ext, 1)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
@@ -115,11 +118,14 @@ class TestMethods(unittest.TestCase):
         payloads = []
         for cnt, pkt in enumerate(pkts):
             if cnt == 0:
-                self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+                self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
                     [S.SPEAD_MAGIC, S.VERSION, 4])
                 for i in range(1,5):
-                    is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
-                        pkt[8*i:8*i+8])[0]
+                    #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
+                    #    pkt[8*i:8*i+8])[0]
+                    rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
+                    is_ext, id = rv[:2]
+                    raw_val = ''.join(rv[2:])
                     if id == 0x1234:
                         self.assertEqual(is_ext, 1)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
@@ -135,11 +141,14 @@ class TestMethods(unittest.TestCase):
                     else: self.assertTrue(False)
                 payloads.append(pkt[5*S.ITEM_BYTES:])
             else:
-                self.assertEqual(S.unpack(S.HDR_FMT, pkt[:8])[0], 
+                self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
                     [S.SPEAD_MAGIC, S.VERSION, 3])
                 for i in range(1,4):
-                    is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
-                        pkt[8*i:8*i+8])[0]
+                    #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
+                    #    pkt[8*i:8*i+8])[0]
+                    rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
+                    is_ext, id = rv[:2]
+                    raw_val = ''.join(rv[2:])
                     if id == S.FRAME_CNT_ID:
                         self.assertEqual(is_ext, 0)
                         self.assertEqual(raw_val, S.IVAL_NULL)
@@ -174,7 +183,7 @@ class TestDescriptor(unittest.TestCase):
         self.assertEqual(d.name, 'varname')
         self.assertEqual(d.description, 'Description')
         self.assertEqual(d.shape, [])
-        self.assertEqual(d.format, [['u',40]])
+        self.assertEqual(list(d.format[0]), ['u',40])
         self.assertEqual(d.nbits, 40)
         self.assertEqual(d.size, 1)
 

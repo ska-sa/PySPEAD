@@ -1,5 +1,39 @@
 #include "include/spead_packet.h"
 
+uint32_t spead_u32_align(char *data, int off, int n_bits) {
+    int i;
+    uint32_t val=0;
+    for (i=0; i < n_bits/8; i++) {
+        ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    }
+    if ((n_bits % 8) > 0) ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    return ntohl(val) >> (8*sizeof(uint32_t) - n_bits);
+}
+
+uint64_t spead_u64_align(char *data, int off, int n_bits) {
+    int i;
+    uint64_t val=0;
+    for (i=0; i < n_bits/8; i++) {
+        ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    }
+    if ((n_bits % 8) > 0) {
+        ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    }
+    return ntohll(val) >> (8*sizeof(uint64_t) - n_bits);
+}
+
+int64_t spead_i64_align(char *data, int off, int n_bits) {
+    int i;
+    uint64_t val=0;
+    for (i=0; i < n_bits/8; i++) {
+        ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    }
+    if ((n_bits % 8) > 0) {
+        ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
+    }
+    return (int64_t)ntohll(val) >> (8*sizeof(uint64_t) - n_bits);
+}
+
 /*___                       _ ____            _        _   
 / ___| _ __   ___  __ _  __| |  _ \ __ _  ___| | _____| |_ 
 \___ \| '_ \ / _ \/ _` |/ _` | |_) / _` |/ __| |/ / _ \ __|
@@ -15,10 +49,6 @@ void spead_packet_init(SpeadPacket *pkt) {
     pkt->payload_off = 0;
     pkt->payload = NULL;
     pkt->next = NULL;
-}
-
-void spead_packet_wipe(SpeadPacket *pkt) {
-    spead_packet_init(pkt);
 }
 
 // Copy pkt1 into pkt2, but don't link (i.e. not pkt->next)
@@ -115,14 +145,14 @@ void spead_frame_wipe(SpeadFrame *frame) {
         free(item);
         item = next_item;
     }
-    // Do not touch frame->last_item b/c it was deleted by spead_item_wipe
+    // Do not touch frame->last_item b/c it was deleted above
     pkt = frame->head_pkt;
     while (pkt != NULL) {
         next_pkt = pkt->next;
         free(pkt);
         pkt = next_pkt;
     }
-    // Do not touch frame->last_pkt b/c it was deleted by spead_packet_wipe
+    // Do not touch frame->last_pkt b/c it was deleted above
     spead_frame_init(frame); // Wipe this frame clean
 }
     
