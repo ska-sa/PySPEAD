@@ -221,8 +221,9 @@ class Descriptor:
     def pack(self, *val):
         '''Convert a series of values into a binary string according to the format of this Descriptor.
         Multi-dimensonal arrays are serialized in C-like order (as opposed to Fortran-like).'''
-        if len(self.shape) == 0: rv = pack(self.format, *val)
+        if self.shape != -1 and len(self.shape) == 0: rv = pack(self.format, *val)
         else:
+            val = numpy.array(val)
             dim = len(self.format)
             if self.shape == -1: val = numpy.reshape(val, (val.size/dim,dim))
             else: val = numpy.reshape(val, (self.size, dim))
@@ -231,7 +232,7 @@ class Descriptor:
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
         # Use self._offset to skip bits if this item has less than IVAL_BITS bits
-        if len(self.shape) == 0:
+        if self.shape != -1 and len(self.shape) == 0:
             if len(self.format) == 1: return unpack(self.format, s, cnt=self.size, offset=self._offset)[0][0]
             else: return unpack(self.format, s, cnt=self.size, offset=self._offset)[0]
         else:
@@ -304,8 +305,11 @@ class Item(Descriptor):
         return self._value
     def to_value_string(self):
         '''Return the value of this Item encoded as a binary string.'''
-        if len(self.shape) == 0 and len(self.format) == 1: return self.pack(self._value)
-        else: return self.pack(*self._value)
+        if self._value == None: raise RuntimeError('item "%s" (ID=%d): value was not initialized' % (self.name, self.id))
+        if self.shape != -1 and len(self.shape) == 0 and len(self.format) == 1: return self.pack(self._value)
+        else:
+            try: return self.pack(*self._value)
+            except(TypeError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s' % (self.name, self.id, self.format, self.shape))
     def has_changed(self):
         '''Return whether this Item has been changed.'''
         return self._changed
@@ -591,7 +595,7 @@ def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
             logger.info('iterframes: Frame %d completed, attempting to unpack heap' % frame.frame_cnt)
             frame.finalize()
             logger.info('iterframes: SpeadFrame.is_valid=%d' % frame.is_valid)
-            yield frame
+            if frame.is_valid: yield frame
             logger.info('iterframes: Starting new frame')
             frame = _spead.SpeadFrame()
             frame.add_packet(pkt)
@@ -599,7 +603,7 @@ def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
     logger.info('iterframes: Frame %d completed, attempting to unpack heap' % frame.frame_cnt)
     frame.finalize()
     logger.info('iterframes: SpeadFrame.is_valid=%d' % frame.is_valid)
-    yield frame
+    if frame.is_valid: yield frame
     logger.info('iterframes: Finished all frames')
     return
 
