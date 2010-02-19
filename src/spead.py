@@ -309,7 +309,7 @@ class Item(Descriptor):
         if self.shape != -1 and len(self.shape) == 0 and len(self.format) == 1: return self.pack(self._value)
         else:
             try: return self.pack(*self._value)
-            except(TypeError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s' % (self.name, self.id, self.format, self.shape))
+            except(TypeError,ValueError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s' % (self.name, self.id, self.format, self.shape))
     def has_changed(self):
         '''Return whether this Item has been changed.'''
         return self._changed
