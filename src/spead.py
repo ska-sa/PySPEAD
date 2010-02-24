@@ -236,19 +236,26 @@ class Item(Descriptor):
             shape=[], fmt=DEFAULT_FMT, from_string=None, init_val=None):
         Descriptor.__init__(self, from_string=from_string, id=id,
             name=name, description=description, shape=shape, fmt=fmt)
-        self.set_value(init_val)
+        self._value = None
+        if not init_val is None: self.set_value(init_val)
     def set_value(self, v):
         '''Directly set the value of this Item to the provided value, and mark this Item as changed.'''
-        if self.size != -1 and len(self.shape) == 0: self._value = ((v,),)
-        else: self._value = v
+        if self.size != -1 and len(self.shape) == 0:
+            v = (v,)
+            if calcdim(self.format) == 1: v = [(x,) for x in v]
+        self._value = v
         self._changed = True
     def from_value_string(self, s):
         '''Set the value of this Item by unpacking the provided binary string.'''
+        print len(s), [self.format], self.size
         self._value, self._changed = self.unpack(s), True
     def get_value(self):
         '''Directly return the value of this Item.'''
-        if self.shape != -1 and len(self.shape) == 0: return self._value[0][0]
-        else: return self._value
+        v = self._value
+        if self.shape != -1 and len(self.shape) == 0:
+            if calcdim(self.format) == 1: v = [x[0] for x in v]
+            v = v[0]
+        return v
     def to_value_string(self):
         '''Return the value of this Item encoded as a binary string.'''
         if self._value == None: raise RuntimeError('item "%s" (ID=%d): value was not initialized' % (self.name, self.id))
@@ -513,7 +520,7 @@ class Transmitter:
         '''Send a packet signalling the end of this stream.'''
         frame = { FRAME_CNT_ID: (0, '\xff\xff\xff\xff\xff\xff'),
             STREAM_CTRL_ID: (0, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
-        logger.info('TX.end: Terminating stream')
+        logger.info('TX.end: Sending stream terminator')
         self.send_frame(frame)
         del(self.t) # Prevents any further activity
             

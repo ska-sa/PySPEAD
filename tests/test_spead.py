@@ -176,10 +176,10 @@ class TestItem(unittest.TestCase):
         #self.u1  = S.Item(id=2**15+2**14, name='var', fmt=[('u',1)], shape=-1)
     def test_get_set_value(self):
         self.i40.set_value(53)
-        self.assertEqual(self.i40._value, ((53,),))
+        self.assertEqual(self.i40._value[0][0], 53)
         self.assertEqual(self.i40.get_value(), 53)
         self.i64.set_value(3.1415)
-        self.assertEqual(self.i64._value, ((3.1415,),))
+        self.assertEqual(self.i64._value[0][0], 3.1415)
         self.assertEqual(self.i64.get_value(), 3.1415)
         #v = n.array([1, 0, 0, 1, 0, 1, 0, 1], dtype=n.bool)
         #self.u1.set_value(v)

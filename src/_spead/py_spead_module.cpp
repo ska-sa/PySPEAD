@@ -103,6 +103,9 @@ PyObject *SpeadPktObj_unpack(SpeadPktObj *self, PyObject *args) {
     if (SPEAD_ITEM_BYTES + item_bytes + self->pkt->payload_len > SPEAD_MAX_PACKET_SIZE) {
         PyErr_Format(PyExc_ValueError, "packet size (%d) exceeds max of %d bytes", size, SPEAD_MAX_PACKET_SIZE);
         return NULL;
+    } else if (size < item_bytes + SPEAD_ITEM_BYTES + self->pkt->payload_len) {
+        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes + SPEAD_ITEM_BYTES);
+        return NULL;
     }
     for (i=0; i < self->pkt->payload_len; i++) {
         self->pkt->payload[i] = data[i + item_bytes + SPEAD_ITEM_BYTES];
