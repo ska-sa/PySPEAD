@@ -3,13 +3,8 @@ PySPEAD
 This is a fast and light Python implementation of the Streaming Protocol for the Exchange of Astronomical Data
 
 ToDo:
-    - There are currently 3 memory copies involved in generating frames from UDP packets:
-        recvfrom => buf
-        buf => SpeadPacket->payload->data (which is malloc'd)
-        SpeadPacket->payload->data => SpeadItem->value (which is malloc'd)
-      We could remove one of these pretty easily by putting recvfrom => SpeadPacket (which is malloc'd),
-      bypassing buf, and then just pointing to where the payload begins.  This would require a slight change 
-      to the structure of SpeadPacket and some attention to memory management.
+    - Unpacking is now pretty quick, but for arrays, we could get one more speed-up by unpacking data directly into
+      a numpy array, rather than to a tuple. 
 
     - Right now, packets are pulled straight from the socket and put into a packet ringbuffer.  The packet
       ringbuffer then feeds a callback that consumes the packets and creates a frame.  While frame creation from
@@ -24,6 +19,8 @@ ToDo:
 
     - Packet sorting is done as each packet is inserted, but it could be
       done faster by buffering them and then quicksorting
+
+    - _spead.pack() is currently the limiting factor on transmit.  Can it be sped up?
        
 Known Issues: 
     - Occasionally MacOSX hangs forever in unittest test_spead.py TestTransportUDPrx.test_get_packets_term.  This

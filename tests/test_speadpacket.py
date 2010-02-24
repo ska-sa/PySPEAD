@@ -105,6 +105,53 @@ class TestSpeadMethods(unittest.TestCase):
             self.assertEqual(c, 'z')
             self.assertEqual(i, u)
             self.assertEqual(d, 3.1)
+    def test_pack_sanity(self):
+        fmt = 'c\x00\x00\x08'
+        self.assertRaises(ValueError, _S.pack, fmt, 1)
+        self.assertRaises(ValueError, _S.pack, '', '')
+        self.assertRaises(ValueError, _S.pack, 'abc', 'def')
+        self.assertRaises(ValueError, _S.pack, fmt, ([1],[2],[3]))
+    def test_pack_char(self):
+        fmt = 'c\x00\x00\x08'
+        self.assertRaises(ValueError, _S.pack, fmt, (('',),('',)))
+        self.assertEqual(_S.pack(fmt, (('a',),('b',))), 'ab')
+        self.assertEqual(_S.pack(fmt, 'abcd'), 'abcd')
+        self.assertEqual(_S.pack(fmt, '\x7f\x80\x7f\x80', offset=7)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x3f\xc0\x3f\xc0', offset=6)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x1f\xe0\x1f\xe0', offset=5)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x0f\xf0\x0f\xf0', offset=4)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x07\xf8\x07\xf8', offset=3)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x03\xfc\x03\xfc', offset=2)[1:], '\xff\x00\xff\x00')
+        self.assertEqual(_S.pack(fmt, '\x01\xfe\x01\xfe', offset=1)[1:], '\xff\x00\xff\x00')
+    def test_pack_float(self):
+        fmt1 = 'f\x00\x00\x20'
+        fmt2 = 'f\x00\x00\x40'
+        self.assertEqual(_S.pack(fmt1, ((1.,),(2.,))), struct.pack('>ff', 1., 2.))
+        self.assertEqual(_S.pack(fmt2, ((1.,),(2.,))), struct.pack('>dd', 1., 2.))
+        self.assertEqual(_S.pack(fmt1, ((1,),(2,))), struct.pack('>ff', 1., 2.))
+        self.assertEqual(_S.pack(fmt2, ((1,),(2,))), struct.pack('>dd', 1., 2.))
+        self.assertRaises(ValueError, _S.pack, fmt2, (('a',),(2,)))
+    def test_pack_unsigned(self):
+        self.assertEqual(_S.pack('u\x00\x00\x08', ((1,),(2,),(3,))), '\x01\x02\x03')
+        fmt = 'u\x00\x00\x01' * 8
+        self.assertEqual(_S.pack(fmt, ((1,0)*4,)), '\xaa')
+        self.assertEqual(_S.pack(fmt, ((1,0)*4,), offset=4), '\x0a\xa0')
+        fmt = 'u\x00\x00\x02u\x00\x00\x04u\x00\x00\x0fu\x00\x00\x03'
+        self.assertEqual(_S.pack(fmt, ((1,2,3,4),)), '\x48\x00\x1c')
+        self.assertEqual(_S.pack(fmt, ((1.,2.,3.,4.),)), '\x48\x00\x1c')
+        self.assertRaises(ValueError, _S.pack, 'u\x00\x00\x08', (('a',),(2,)))
+        fmt = 'u\x00\x00\x28'
+        self.assertEqual(_S.pack(fmt, ((2**32+2**8,),)), '\x01\x00\x00\x01\x00')
+    def test_pack_signed(self):
+        self.assertEqual(_S.pack('i\x00\x00\x08', ((-1,),(2,),(-3,))), '\xff\x02\xfd')
+        fmt = 'i\x00\x00\x02' * 4
+        self.assertEqual(_S.pack(fmt, ((1,-1)*2,)), '\x77')
+        self.assertEqual(_S.pack(fmt, ((1,-1)*4,), offset=4), '\x07\x70')
+        self.assertRaises(ValueError, _S.pack, 'i\x00\x00\x08', (('a',),(2,)))
+    def test_pack_mixed(self):
+        fmt = 'c\x00\x00\x08u\x00\x00\x18'
+        self.assertEqual(_S.pack(fmt, (('c',8),('u',24))), fmt)
+        
 
 class TestSpeadPacket(unittest.TestCase):
     def setUp(self):

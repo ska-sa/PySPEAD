@@ -1,5 +1,7 @@
 #include "include/spead_packet.h"
 
+// Return data at the specified offset (in bits) and # of bits as
+// a byte-aligned word
 uint32_t spead_u32_align(char *data, int off, int n_bits) {
     int i;
     uint32_t val=0;
@@ -32,6 +34,41 @@ int64_t spead_i64_align(char *data, int off, int n_bits) {
         ((uint8_t *)&val)[i] = SPEAD_U8_ALIGN(data+i*sizeof(uint8_t),off);
     }
     return (int64_t)ntohll(val) >> (8*sizeof(uint64_t) - n_bits);
+}
+
+// off must be < 8 bits, val must be network endian and point to first byte containing data
+void spead_copy_bits(char *data, char *val, int off, int n_bits) {
+    int voff = (8-n_bits%8) % 8;
+    int last_bit = off + n_bits;
+    int last_byte = (last_bit-1)/8;
+    int last_vbyte = (n_bits-1)/8;
+    int shift = voff - off;
+    int i;
+    char m, *v;
+    if (last_byte == 0) {
+        m = (0xFF >> (8 - n_bits)) << (8 - last_bit);
+        data[0] &= ~m;
+        data[0] |= ((val[0] << voff) >> off) & m;
+    } else {
+        // Mask first byte where val isn't being written
+        //printf("data[0]=%02x\n", data[0]);
+        data[0] &= 0xFF << (8 - off);
+        //printf("voff=%d aligned_val=%02x off=%d\n", voff, SPEAD_U8_ALIGN(val, voff), off);
+        data[0] |= SPEAD_U8_ALIGN(val, voff) >> off;
+        //printf("data[0]=%02x\n", data[0]);
+        // Mask last byte where val isn't being written
+        //printf("data[last_byte]=%02x\n", data[last_byte]);
+        //data[last_byte] &= 0xFF >> (last_bit % 8);
+        data[last_byte] &= ~(0xFF << ((8 - (last_bit%8)) % 8));
+        //printf("last_vbyte=%d val=%02x last_bit=%d\n", last_vbyte, val[last_vbyte], last_bit);
+        data[last_byte] |= val[last_vbyte] << ((8 - (last_bit % 8))%8);
+        //printf("data[last_byte]=%02x\n", data[last_byte]);
+        // For the rest, can just do an 8b realignment in the copy
+        shift = voff - off;
+        v = (shift < 0) ? val-1 : val;
+        shift %= 8;
+        for (i=1; i < last_byte; i++) { data[i] = SPEAD_U8_ALIGN(v+i, shift); }
+    }
 }
 
 /*___                       _ ____            _        _   

@@ -1,18 +1,18 @@
-import unittest, spead as S, spead._spead as _S
+import unittest, spead as S, spead._spead as _S, numpy as n
 import bitstring, struct, sys, os, time, socket
 #import logging; logging.basicConfig(level=logging.DEBUG)
 
 example_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
-    S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
-    S.pack(S.ITEM_FMT, 1, 0x3333, 0),
-    S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
+    S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, 3),)),
+    S.pack(S.ITEM_FMT, ((0, S.FRAME_CNT_ID, 3),)),
+    S.pack(S.ITEM_FMT, ((1, 0x3333, 0),)),
+    S.pack(S.ITEM_FMT, ((0, S.PAYLOAD_LENGTH_ID, 8),)),
     struct.pack('>d', 3.1415)])
 
 term_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 2),
-    S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 0),
-    S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
+    S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, 2),)),
+    S.pack(S.ITEM_FMT, ((0, S.FRAME_CNT_ID, 0),)),
+    S.pack(S.ITEM_FMT, ((0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),)),])
 
 example_frame = {
     S.FRAME_CNT_ID: (0, '\x00\x00\x00\x00\x03'),
@@ -34,31 +34,18 @@ class TestMethods(unittest.TestCase):
         self.assertEqual(S.calcsize(S.DEFAULT_FMT), 40)
         self.assertEqual(S.calcsize(S.ITEM_FMT), 64)
         self.assertEqual(S.calcsize(S.FORMAT_FMT), 32)
-    def test_conv_format(self):
-        self.assertEqual(S.conv_format(S.DEFAULT_FMT), 'uint:40')
-        self.assertEqual(S.conv_format(S.ITEM_FMT), 'uint:1,uint:23,uint:40')
-        self.assertEqual(S.conv_format(S.FORMAT_FMT), 'bytes:1,uint:24')
     def test_pack(self):
-        self.assertEqual(S.pack(S.DEFAULT_FMT, 2**32+2**8), 
+        self.assertEqual(S.pack(S.DEFAULT_FMT, ((2**32+2**8,),)), 
             '\x01\x00\x00\x01\x00')
-        self.assertEqual(S.pack(S.ITEM_FMT, 0, 4, 8), 
+        self.assertEqual(S.pack(S.ITEM_FMT, ((0, 4, 8),)), 
             '\x00\x00\x04\x00\x00\x00\x00\x08')
-        self.assertEqual(S.pack(S.FORMAT_FMT, 'u', 8), 'u\x00\x00\x08')
-    def test_pack_to_bitstring(self):
-        self.assertEqual(S.pack_to_bitstring(S.DEFAULT_FMT, 2**32+2**8).bytes, 
-            '\x01\x00\x00\x01\x00')
-        self.assertEqual(S.pack_to_bitstring(S.ITEM_FMT, 0, 4, 8).bytes, 
-            '\x00\x00\x04\x00\x00\x00\x00\x08')
-        self.assertEqual(S.pack_to_bitstring(S.FORMAT_FMT, 'u', 8).bytes, 
-            'u\x00\x00\x08')
+        self.assertEqual(S.pack(S.FORMAT_FMT, (('u', 8),)), 'u\x00\x00\x08')
     def test_unpack(self):
         self.assertEqual(S.unpack(S.DEFAULT_FMT,
             '\x01\x00\x00\x01\x00')[0][0], 2**32+2**8)
         self.assertEqual(list(S.unpack(S.ITEM_FMT,
             '\x00\x00\x04\x00\x00\x00\x00\x08')[0]), [0, 4, 8]) 
         self.assertEqual(list(S.unpack(S.FORMAT_FMT, 'u\x00\x00\x08')[0]), ['u', 8]) 
-        bs = bitstring.BitString(bytes='\x01\x00\x00\x01\x00')
-        self.assertEqual(S.unpack(S.DEFAULT_FMT, bs)[0][0], 2**32+2**8)
         self.assertEqual(''.join([a[0] for a in S.unpack(S.STR_FMT, 'abcde', cnt=4)]), 'abcd')
         self.assertEqual(''.join([a[0] for a in S.unpack(S.STR_FMT, 'abcde', cnt=-1)]), 'abcde')
     def test_readable_header(self):
@@ -91,9 +78,8 @@ class TestMethods(unittest.TestCase):
         self.assertEqual(len(pkts), 1)
         pkt = pkts[0]
         self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-            [S.SPEAD_MAGIC, S.VERSION, 4])
+            [S.MAGIC, S.VERSION, 4])
         for i in range(1,4):
-            #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
             rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
             is_ext, id = rv[:2]
             raw_val = ''.join(rv[2:])
@@ -119,10 +105,8 @@ class TestMethods(unittest.TestCase):
         for cnt, pkt in enumerate(pkts):
             if cnt == 0:
                 self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-                    [S.SPEAD_MAGIC, S.VERSION, 4])
+                    [S.MAGIC, S.VERSION, 4])
                 for i in range(1,5):
-                    #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
-                    #    pkt[8*i:8*i+8])[0]
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
                     is_ext, id = rv[:2]
                     raw_val = ''.join(rv[2:])
@@ -142,10 +126,8 @@ class TestMethods(unittest.TestCase):
                 payloads.append(pkt[5*S.ITEM_BYTES:])
             else:
                 self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-                    [S.SPEAD_MAGIC, S.VERSION, 3])
+                    [S.MAGIC, S.VERSION, 3])
                 for i in range(1,4):
-                    #is_ext, id, raw_val = S.unpack(S.RAW_ITEM_FMT, 
-                    #    pkt[8*i:8*i+8])[0]
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
                     is_ext, id = rv[:2]
                     raw_val = ''.join(rv[2:])
@@ -173,7 +155,7 @@ class TestDescriptor(unittest.TestCase):
         self.assertEqual(self.d.name, 'varname')
         self.assertEqual(self.d.description, 'Description')
         self.assertEqual(self.d.shape, [])
-        self.assertEqual(self.d.format, (('u',40),))
+        self.assertEqual(self.d.format, 'u\x00\x00\x28')
         self.assertEqual(self.d.nbits, 40)
         self.assertEqual(self.d.size, 1)
     def test_to_from_descriptor_string(self):
@@ -183,21 +165,25 @@ class TestDescriptor(unittest.TestCase):
         self.assertEqual(d.name, 'varname')
         self.assertEqual(d.description, 'Description')
         self.assertEqual(d.shape, [])
-        self.assertEqual(list(d.format[0]), ['u',40])
+        self.assertEqual(d.format, 'u\x00\x00\x28')
         self.assertEqual(d.nbits, 40)
         self.assertEqual(d.size, 1)
 
 class TestItem(unittest.TestCase):
     def setUp(self):
         self.i40 = S.Item(id=2**15+2**14, name='var')
-        self.i64 = S.Item(id=2**15+2**14, name='var', fmt=[('f',64)])
+        self.i64 = S.Item(id=2**15+2**14, name='var', fmt='f\x00\x00\x40')
+        #self.u1  = S.Item(id=2**15+2**14, name='var', fmt=[('u',1)], shape=-1)
     def test_get_set_value(self):
         self.i40.set_value(53)
-        self.assertEqual(self.i40._value, 53)
+        self.assertEqual(self.i40._value, ((53,),))
         self.assertEqual(self.i40.get_value(), 53)
         self.i64.set_value(3.1415)
-        self.assertEqual(self.i64._value, 3.1415)
+        self.assertEqual(self.i64._value, ((3.1415,),))
         self.assertEqual(self.i64.get_value(), 3.1415)
+        #v = n.array([1, 0, 0, 1, 0, 1, 0, 1], dtype=n.bool)
+        #self.u1.set_value(v)
+        #self.assertTrue(n.all(self.u1.get_value() == v))
     def test_has_changed(self):
         self.i40._changed = False
         self.assertEqual(self.i40.has_changed(), False)
@@ -216,13 +202,19 @@ class TestItem(unittest.TestCase):
         self.assertEqual(self.i64.to_value_string(), '@\x19\x1e\xb8Q\xeb\x85\x1f')
         self.i64.from_value_string('\x00'*8)
         self.assertEqual(self.i64.get_value(), 0)
+        #v = n.array([1, 0, 0, 1, 0, 1, 0, 1], dtype=n.bool)
+        #self.u1.set_value(v)
+        #self.assertEqual(self.u1.to_value_string(), '\x95')
+        #self.u1.from_value_string('\xf0')
+        #self.assertTrue(n.all(self.u1.get_value() == n.array([1,1,1,1,0,0,0,0], dtype=n.bool)))
+        
 
 class TestItemGroup(unittest.TestCase):
     def setUp(self):
         self.ig = S.ItemGroup()
         self.ig.add_item(name='var1')
         self.ig.add_item(name='var2')
-        self.ig.add_item(name='var3', id=45678, fmt=[('f',64)])
+        self.ig.add_item(name='var3', id=45678, fmt='f\x00\x00\x40')
         self.id1 = S.UNRESERVED_OPTION
         self.id2 = S.UNRESERVED_OPTION + 1
         self.id3 = 45678
@@ -273,7 +265,7 @@ class TestItemGroup(unittest.TestCase):
         self.assertTrue(self.ig.get_item('var3').to_descriptor_string() in descriptors)
     def test_update(self):
         ig2 = S.ItemGroup()
-        ig2.add_item('var1', id=0x3333, fmt=[('f',64)])
+        ig2.add_item('var1', id=0x3333, fmt='f\x00\x00\x40')
         ig2.add_item('var2', id=0x3334)
         ig2['var1'] = 10
         ig2['var2'] = 10

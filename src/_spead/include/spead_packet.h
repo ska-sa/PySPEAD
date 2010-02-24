@@ -60,9 +60,10 @@
     ((uint8_t *)data)[0] : \
     (((uint8_t *)data)[0] << off) | (((uint8_t *)data)[1] >> (8*sizeof(uint8_t) - off)))
 
-uint32_t spead_u32_align(char *data, int start_bit, int n_bits);
-uint64_t spead_u64_align(char *data, int start_bit, int n_bits);
-int64_t spead_i64_align(char *data, int start_bit, int n_bits);
+uint32_t spead_u32_align(char *data, int off, int n_bits);
+uint64_t spead_u64_align(char *data, int off, int n_bits);
+int64_t spead_i64_align(char *data, int off, int n_bits);
+void spead_copy_bits(char *data, char *val, int off, int n_bits);
 
 /*___                       _ ____            _        _   
 / ___| _ __   ___  __ _  __| |  _ \ __ _  ___| | _____| |_ 

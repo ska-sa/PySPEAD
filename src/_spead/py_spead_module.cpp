@@ -646,28 +646,12 @@ PyTypeObject BsockType = {
 |____/| .__/ \___|\__,_|\__,_| |_|  |_|\___/ \__,_|\__,_|_|\___|
       |_|                                                       */
 
-PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
-    PyObject *rv, *tup;
-    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE];
-    Py_ssize_t fmt_len, data_len;
+
+int _spead_unpack_fmt(char *fmt, Py_ssize_t fmt_len, char *fmt_types, int *fmt_bits) {
+    int n_fmts, i,  flag=0, tot_fmt_bits=0;
     uint32_t fmt_item;
-    uint64_t u64;
-    int64_t i64;
-    uint32_t u32;
-    uint8_t u8;
-    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits=0, flag=0, offset=0;
-    long cnt=1, j;
-    static char *kwlist[] = {"fmt", "data", "cnt", "offset", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#s#|li", kwlist, &fmt, &fmt_len, &data, &data_len, &cnt, &offset))
-        return NULL;
-    if (offset >= 8) {
-        PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
-        return NULL;
-    }
-    if (fmt_len <= 0 || fmt_len % SPEAD_FMT_BYTES != 0 || fmt_len / SPEAD_FMT_BYTES > SPEAD_MAX_FMT_SIZE) {
-        PyErr_Format(PyExc_ValueError, "Invalid fmt string");
-        return NULL;
-    }
+    if (fmt_len <= 0 || fmt_len % SPEAD_FMT_BYTES != 0 || fmt_len / SPEAD_FMT_BYTES > SPEAD_MAX_FMT_SIZE)
+        return -1;
     // Validate fmt
     n_fmts = fmt_len / SPEAD_FMT_BYTES;
     for (i=0; i < n_fmts; i++) {
@@ -689,12 +673,34 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
         }
         if (flag) break;
     }
-    if (flag) {
+    if (flag) return -1;
+    return tot_fmt_bits;
+}
+        
+PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *rv, *tup;
+    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE];
+    Py_ssize_t fmt_len, data_len;
+    uint64_t u64;
+    int64_t i64;
+    uint32_t u32;
+    uint8_t u8;
+    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits=0, offset=0;
+    long cnt=1, j;
+    static char *kwlist[] = {"fmt", "data", "cnt", "offset", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#s#|li", kwlist, &fmt, &fmt_len, &data, &data_len, &cnt, &offset))
+        return NULL;
+    if (offset >= 8) {
+        PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
+        return NULL;
+    }
+    tot_fmt_bits = _spead_unpack_fmt(fmt, fmt_len, fmt_types, fmt_bits);
+    if (tot_fmt_bits == -1) {
         PyErr_Format(PyExc_ValueError, "Invalid fmt string");
         return NULL;
     }
-        
-    // Check if this is a dynamically sized variable
+    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    // Check if this is  dynamically sized variable
     if (cnt < 0) cnt = data_len * 8 / tot_fmt_bits; // 8 bits per byte
     // Make sure we have enough data
     if (cnt * tot_fmt_bits + offset > data_len * 8) {
@@ -740,10 +746,139 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
     return rv;        
 }
 
+PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *tup, *iter1, *iter2, *item1, *item2;
+    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE], *sval;
+    Py_ssize_t fmt_len, val_len;
+    float fval;
+    double dval;
+    uint64_t u64val;
+    uint32_t u32val;
+    int64_t i64val;
+    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits, flag=0, offset=0;
+    long cnt, j, tot_bytes;
+    static char *kwlist[] = {"fmt", "data", "offset", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#O|i", kwlist, &fmt, &fmt_len, &tup, &offset))
+        return NULL;
+    if (offset >= 8) {
+        PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
+        return NULL;
+    }
+    tot_fmt_bits = _spead_unpack_fmt(fmt, fmt_len, fmt_types, fmt_bits);
+    if (tot_fmt_bits == -1) {
+        PyErr_Format(PyExc_ValueError, "Invalid fmt string");
+        return NULL;
+    }
+    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    //printf("Format has length %d\n", n_fmts);
+    //printf("Format has %d bits\n", tot_fmt_bits);
+    cnt = PyObject_Length(tup);
+    if (cnt == -1) {
+        PyErr_Format(PyExc_ValueError, "data does not match format");
+        return NULL;
+    }
+    tot_bytes = cnt * tot_fmt_bits / 8;  // 8 bits per byte
+    if (offset != 0) tot_bytes += 1;
+    //printf("Data has length %d\n", cnt);
+    //printf("Allocating %d bytes\n", tot_bytes);
+    data = (char *) malloc(tot_bytes);
+    if (data == NULL) {
+        PyErr_Format(PyExc_MemoryError, "Could not allocate output data in spead_pack()");
+        return NULL;
+    }
+    iter1 = PyObject_GetIter(tup);
+    if (iter1 == NULL) return NULL;
+    // Loop over dimension of array
+    for (j=0; j < cnt; j++) {
+        item1 = PyIter_Next(iter1); // item1 has to be valid b/c cnt was derived from len(tup)
+        iter2 = PyObject_GetIter(item1);
+        if (iter2 == NULL) {
+            flag = 1;
+            Py_DECREF(item1);
+            break;
+        }
+        // Loop over each format entry
+        for (i=0; i < n_fmts; i++) {
+            //printf("Entry %d, Format %d\n", j, i);
+            item2 = PyIter_Next(iter2);
+            if (item2 == NULL) {
+                flag = 1;
+                break;
+            }
+            // actually handle the data
+            //printf("   Fmt: (%c,%d) applied to ", fmt_types[i], fmt_bits[i]);
+            //PyObject_Print(item2, stdout, 0);
+            //printf("\n");
+            switch(fmt_types[i]) {
+                case 'u':
+                    //printf("   Uint copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
+                    u64val = (uint64_t) PyInt_AsUnsignedLongMask(item2);
+                    //printf("   got %ld\n", u64val);
+                    if (PyErr_Occurred()) {
+                        flag = 1;
+                        break;
+                    }
+                    u64val = htonll(u64val);
+                    //printf("   sending %02x%02x%02x%02x%02x%02x%02x%02x\n", ((char *)&u64val)[0], ((char *)&u64val)[1], ((char *)&u64val)[2], ((char *)&u64val)[3], ((char *)&u64val)[4], ((char *)&u64val)[5], ((char *)&u64val)[6], ((char *)&u64val)[7]);
+                    spead_copy_bits(data+offset/8, (char *)&u64val + (8*sizeof(uint64_t)-fmt_bits[i])/8, offset%8, fmt_bits[i]);
+                    break;
+                case 'i':
+                    //printf("   Int copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
+                    i64val = (int64_t) PyInt_AsLong(item2);
+                    if (PyErr_Occurred()) {
+                        flag = 1;
+                        break;
+                    }
+                    u64val = htonll(((uint64_t *)&i64val)[0]);
+                    spead_copy_bits(data+offset/8, (char *)&u64val + (8*sizeof(uint64_t)-fmt_bits[i])/8, offset%8, fmt_bits[i]);
+                    break;
+                case 'f':
+                    dval = PyFloat_AsDouble(item2);
+                    if (PyErr_Occurred()) {
+                        flag = 1;
+                        break;
+                    }
+                    if (fmt_bits[i] == 32) {
+                        //printf("   Float32 copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
+                        fval = (float) dval;
+                        u32val = htonl(((uint32_t *)&fval)[0]);
+                        spead_copy_bits(data+offset/8, (char *)&u32val, offset%8, 32);
+                    } else {
+                        //printf("   Float64 copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
+                        u64val = htonll(((uint64_t *)&dval)[0]);
+                        spead_copy_bits(data+offset/8, (char *)&u64val, offset%8, 64);
+                    }
+                    break;
+                case 'c':
+                    if (PyString_AsStringAndSize(item2, &sval, &val_len) == -1 || sval == NULL || val_len == 0) {
+                        flag = 1;
+                        break;
+                    }
+                    //printf("   Copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
+                    spead_copy_bits(data+offset/8, sval, offset%8, fmt_bits[i]);
+                    break;
+            }
+            offset += fmt_bits[i];
+            Py_DECREF(item2);
+        }
+        Py_DECREF(iter2);
+        Py_DECREF(item1);
+        if (flag) break;
+    }
+    Py_DECREF(iter1);
+    if (flag) {
+        PyErr_Format(PyExc_ValueError, "data does not match format");
+        return NULL;
+    }
+    return PyString_FromStringAndSize(data, tot_bytes);
+}
+
 // Module methods
 static PyMethodDef spead_methods[] = {
     {"unpack", (PyCFunction)spead_unpack, METH_VARARGS | METH_KEYWORDS,
-        "unpack(fmt, data, cnt=1, offset=0)\nReturn tuple of fmt read from the binary string 'data'"},
+        "unpack(fmt, data, cnt=1, offset=0)\nReturn tuple using fmt to read from binary string 'data'"},
+    {"pack", (PyCFunction)spead_pack, METH_VARARGS | METH_KEYWORDS,
+        "pack(fmt, data, offset=0)\nReturn binary string packed from 'data' using fmt"},
     {NULL, NULL}  /* Sentinel */
 };
 
@@ -767,5 +902,19 @@ PyMODINIT_FUNC init_spead(void) {
     PyModule_AddObject(m, "SpeadFrame", (PyObject *)&SpeadFrameType);
     Py_INCREF(&SpeadPktType);
     PyModule_AddObject(m, "SpeadPacket", (PyObject *)&SpeadPktType);
+    PyModule_AddIntConstant(m, "MAGIC", SPEAD_MAGIC);
+    PyModule_AddIntConstant(m, "VERSION", SPEAD_VERSION);
+    PyModule_AddIntConstant(m, "FRAME_CNT_ID", SPEAD_FRAME_CNT_ID);
+    PyModule_AddIntConstant(m, "PAYLOAD_OFFSET_ID", SPEAD_PAYLOAD_OFFSET_ID);
+    PyModule_AddIntConstant(m, "PAYLOAD_LENGTH_ID", SPEAD_PAYLOAD_LENGTH_ID);
+    PyModule_AddIntConstant(m, "DESCRIPTOR_ID", SPEAD_DESCRIPTOR_ID);
+    PyModule_AddIntConstant(m, "STREAM_CTRL_ID", SPEAD_STREAM_CTRL_ID);
+    PyModule_AddIntConstant(m, "STREAM_CTRL_TERM_VAL", SPEAD_STREAM_CTRL_TERM_VAL);
+    PyModule_AddIntConstant(m, "ITEM_BYTES", SPEAD_ITEM_BYTES);
+    PyModule_AddIntConstant(m, "FMT_BYTES", SPEAD_FMT_BYTES);
+    PyModule_AddIntConstant(m, "IVAL_BITS", 8*SPEAD_ITEM_VAL_BYTES);
+    PyModule_AddIntConstant(m, "IVAL_BYTES", SPEAD_ITEM_VAL_BYTES);
+    PyModule_AddIntConstant(m, "MAX_PACKET_SIZE", SPEAD_MAX_PACKET_SIZE);
+    PyModule_AddIntConstant(m, "MAX_FMT_SIZE", SPEAD_MAX_FMT_SIZE);
 }
 

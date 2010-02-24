@@ -7,8 +7,9 @@ Data packet:
 [ Payload (heap) .............................................
 .............................................................]
 '''
-import socket, bitstring, math, numpy, logging, sys
-import _spead, time
+import socket, math, numpy, logging, sys
+import time, bitstring
+from _spead import *
 
 logger = logging.getLogger('spead')
 
@@ -18,38 +19,33 @@ logger = logging.getLogger('spead')
 # | |__| (_) | | | \__ \ || (_| | | | | |_\__ \
 #  \____\___/|_| |_|___/\__\__,_|_| |_|\__|___/
 
-SPEAD_MAGIC = 0x4b5254
-VERSION = 3
 MAX_PACKET_SIZE = 9200
 MAX_PAYLOADS_IN_FRAME = 4096
 UNRESERVED_OPTION = 2**12
-
-FRAME_CNT_ID = 0x01
-PAYLOAD_OFFSET_ID = 0x02
-PAYLOAD_LENGTH_ID = 0x03
-DESCRIPTOR_ID = 0x04
-STREAM_CTRL_ID = 0x05
 NAME_ID = 0x06
 DESCRIPTION_ID = 0x07
 SHAPE_ID = 0x08
 FORMAT_ID = 0x09
 ID_ID = 0x0A
+IVAL_NULL = '\x00'*IVAL_BYTES
+DEBUG = False
 
-DEFAULT_FMT = (('u',40),)
-HDR_FMT = (('u',24),('u',8),('u',32))
-#RAW_ITEM_FMT = (('u',1),('u',23),('c',40))
-RAW_ITEM_FMT = (('u',1),('u',23)) + (('c',8),) * 5
-ITEM_FMT = (('u',1),('u',23),('u',40))
-ID_FMT = (('u',16),('u',24))
-SHAPE_FMT = (('u',8),('u',56))
-FORMAT_FMT = (('c',8),('u',24))
-STR_FMT = (('c',8),)
+#def pack(fmt, *args): return _spead.pack(fmt, args)
+
+FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'
+DEFAULT_FMT = pack(FORMAT_FMT, (('u',40),))
+HDR_FMT = pack(FORMAT_FMT, (('u',24),('u',8),('u',32)))
+RAW_ITEM_FMT = pack(FORMAT_FMT, (('u',1),('u',23),('c',8),('c',8),('c',8),('c',8),('c',8)))
+ITEM_FMT = pack(FORMAT_FMT, (('u',1),('u',23),('u',40)))
+ID_FMT = pack(FORMAT_FMT, (('u',16),('u',24)))
+SHAPE_FMT = pack(FORMAT_FMT, (('u',8),('u',56)))
+STR_FMT = pack(FORMAT_FMT, (('c',8),))
 
 ITEM = {
     'FRAME_CNT':      {'ID':FRAME_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_LEN':    {'ID':PAYLOAD_LENGTH_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_OFF':    {'ID':PAYLOAD_OFFSET_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
-    'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':SPEAD_MAGIC,        'CNT':1},
+    'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':MAGIC,        'CNT':1},
     'STREAM_CTRL':    {'ID':STREAM_CTRL_ID,    'FMT':DEFAULT_FMT,        'CNT':1},
     'NAME':           {'ID':NAME_ID,           'FMT':STR_FMT,            'CNT':-1},
     'DESCRIPTION':    {'ID':DESCRIPTION_ID,    'FMT':STR_FMT,            'CNT':-1},
@@ -61,23 +57,6 @@ ITEM = {
 NAME = {}
 for name, d in ITEM.iteritems(): NAME[d['ID']] = name
 
-ITEM_BITS = 64
-ITEM_BYTES = ITEM_BITS / 8
-IVAL_BITS = 40
-IVAL_BYTES = IVAL_BITS / 8
-IVAL_NULL = '\x00'*IVAL_BYTES
-STREAM_CTRL_TERM_VAL = 0x2
-
-DEBUG = False
-
-pack_types = {
-    'i': lambda b: 'int:%d' % b,
-    'u': lambda b: 'uint:%d' % b,
-    'f': lambda b: 'float:%d' % b,
-    'c': lambda b: 'bytes:%d' % (b/8), # bitstring specifies 'bytes' in bytes, not bits
-    'b': lambda b: 'bin:%d' % b,
-}
-
 #  _   _ _   _ _ _ _         
 # | | | | |_(_) (_) |_ _   _ 
 # | | | | __| | | | __| | | |
@@ -86,48 +65,18 @@ pack_types = {
 #                      |___/ 
 
 def calcsize(fmt):
-    return sum([f[1] for f in fmt])
+    return sum([f[1] for f in unpack(FORMAT_FMT, fmt, cnt=-1)])
 
-def conv_format(fmt):
-    return ','.join([pack_types[f[0]](f[1]) for f in fmt])
-    
-def pack_to_bitstring(fmt, *args):
-    return bitstring.pack(conv_format(fmt), *args)
+def calcdim(fmt):
+    return len(fmt)/3
 
-def pack(fmt, *args):
-    return pack_to_bitstring(fmt, *args).bytes
-
-def unpack_iter(fmt, data, cnt=1, offset=0):
-    if not type(data) == bitstring.BitString: data = bitstring.BitString(bytes=data)
-    data.pos = offset
-    cfmt = conv_format(fmt)
-    if cnt < 0:
-        # Read a dynamic number of entries
-        try:
-            while True:
-                p = data.pos
-                d = data.readlist(cfmt)
-                if data.pos == p: return  # End iterator if no data was actually read
-                yield d
-        except(ValueError): return
-    else:
-        # Read a static number of entries
-        for c in range(cnt): yield data.readlist(cfmt)
-        return
-
-#def unpack(fmt, data, cnt=1, offset=0):
-#    return [u for u in unpack_iter(fmt, data, cnt=cnt, offset=offset)]
-def unpack(fmt, data, cnt=1, offset=0):
-    cfmt = ''.join(pack(FORMAT_FMT, *f) for f in fmt)
-    if type(data) == bitstring.BitString: data = data.bytes
-    return _spead.unpack(cfmt, data, cnt=cnt, offset=offset)
+#def unpack(fmt, data, cnt=1, offset=0): return _spead.unpack(fmt, data, cnt=cnt, offset=offset)
 
 def readable_payload(payload, prepend=''):
     bs = bitstring.BitString(bytes=payload)
     return prepend + bs.hex[2:]
 
 def readable_header(h, prepend=''):
-    #is_ext, id, raw_val = unpack(RAW_ITEM_FMT, h)[0]
     rv = unpack(RAW_ITEM_FMT, h)[0]
     is_ext, id = rv[:2]
     raw_val = ''.join(rv[2:])
@@ -218,27 +167,22 @@ class Descriptor:
         # If nbits is smaller than IVAL_BITS, generate offset needed for reading IVAL_BITS
         if self.nbits > 0 and self.nbits < IVAL_BITS: self._offset = IVAL_BITS - self.nbits
         else: self._offset = 0
-    def pack(self, *val):
+    def pack(self, val):
         '''Convert a series of values into a binary string according to the format of this Descriptor.
         Multi-dimensonal arrays are serialized in C-like order (as opposed to Fortran-like).'''
-        if self.shape != -1 and len(self.shape) == 0: rv = pack(self.format, *val)
-        else:
+        if self.shape == -1 or len(self.shape) != 0:
             val = numpy.array(val)
-            dim = len(self.format)
+            dim = calcdim(self.format)
             if self.shape == -1: val = numpy.reshape(val, (val.size/dim,dim))
             else: val = numpy.reshape(val, (self.size, dim))
-            rv = ''.join([pack(self.format, *v) for v in val])
-        return rv
+        return pack(self.format, val)
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
-        # Use self._offset to skip bits if this item has less than IVAL_BITS bits
-        if self.shape != -1 and len(self.shape) == 0:
-            if len(self.format) == 1: return unpack(self.format, s, cnt=self.size, offset=self._offset)[0][0]
-            else: return unpack(self.format, s, cnt=self.size, offset=self._offset)[0]
-        else:
-            v = numpy.array(unpack(self.format, s, cnt=self.size, offset=self._offset))
-            if self.shape != -1: v.shape = self.shape
-            return v
+        val = unpack(self.format, s, cnt=self.size, offset=self._offset)
+        if self.shape == -1 or len(self.shape) != 0:
+            val = numpy.array(val)
+            if self.shape != -1: val.shape = self.shape
+        return val
     #def resolve_ids(self, id_dict={}):
     #    '''Use a dictionary of IDs to resolve descriptors that are linked to other descriptors.'''
     #    self._unresolved_ids = {}
@@ -252,12 +196,12 @@ class Descriptor:
     #    return len(ids) == 0, ids
     def to_descriptor_string(self):
         '''Create a string representation that encodes the attributes of this descriptor.'''
-        if self.size == -1: shape = pack(SHAPE_FMT, 2, 0)
-        else: shape = ''.join([pack(SHAPE_FMT, 0, s) for s in self.shape])
+        if self.size == -1: shape = pack(SHAPE_FMT, ((2, 0),))
+        else: shape = pack(SHAPE_FMT, [(0, s) for s in self.shape])
         frame = {
-            ID_ID: (0, pack(ID_FMT, 0, self.id)),
+            ID_ID: (0, pack(ID_FMT, ((0, self.id),))),
             SHAPE_ID: (1, shape),
-            FORMAT_ID: (1, ''.join([pack(FORMAT_FMT, *f) for f in self.format])),
+            FORMAT_ID: (1, self.format),
             NAME_ID: (1, self.name),
             DESCRIPTION_ID: (1, self.description),
             FRAME_CNT_ID: (0, IVAL_NULL),
@@ -274,7 +218,7 @@ class Descriptor:
                 if shape[0][0] == 2: self.shape = -1
                 else: self.shape = [s[1] for s in shape]
             except(IndexError,TypeError): self.shape = []
-            self.format = unpack(FORMAT_FMT, items[FORMAT_ID], cnt=-1)
+            self.format = items[FORMAT_ID]
             self.name = ''.join([f[0] for f in items[NAME_ID]])
             self.description = ''.join([f[0] for f in items[DESCRIPTION_ID]])
             self._calcsize()
@@ -295,21 +239,21 @@ class Item(Descriptor):
         self.set_value(init_val)
     def set_value(self, v):
         '''Directly set the value of this Item to the provided value, and mark this Item as changed.'''
-        self._value = v
+        if self.size != -1 and len(self.shape) == 0: self._value = ((v,),)
+        else: self._value = v
         self._changed = True
     def from_value_string(self, s):
         '''Set the value of this Item by unpacking the provided binary string.'''
-        self.set_value(self.unpack(s))
+        self._value, self._changed = self.unpack(s), True
     def get_value(self):
         '''Directly return the value of this Item.'''
-        return self._value
+        if self.shape != -1 and len(self.shape) == 0: return self._value[0][0]
+        else: return self._value
     def to_value_string(self):
         '''Return the value of this Item encoded as a binary string.'''
         if self._value == None: raise RuntimeError('item "%s" (ID=%d): value was not initialized' % (self.name, self.id))
-        if self.shape != -1 and len(self.shape) == 0 and len(self.format) == 1: return self.pack(self._value)
-        else:
-            try: return self.pack(*self._value)
-            except(TypeError,ValueError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s' % (self.name, self.id, self.format, self.shape))
+        try: return self.pack(self._value)
+        except(TypeError,ValueError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s: %s' % (self.name, self.id, [self.format], self.shape, self._value))
     def has_changed(self):
         '''Return whether this Item has been changed.'''
         return self._changed
@@ -369,7 +313,7 @@ class ItemGroup:
         # Inject an automatically generated frame count
         logger.info('ITEMGROUP.get_frame: Building frame with FRAME_CNT=%d' % self.frame_cnt)
         if frame is None: frame = {}
-        frame[FRAME_CNT_ID] = (0, pack(DEFAULT_FMT, self.frame_cnt))
+        frame[FRAME_CNT_ID] = (0, pack(DEFAULT_FMT, ((self.frame_cnt,),)))
         self.frame_cnt += 1
         # Process descriptors for any items that have been added. Since there can 
         # be multiple ITEM_DESCRIPTORs, it will be a list that is specially handled.
@@ -418,7 +362,7 @@ def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
     iterate over the set of binary SPEAD packets that propagate this data
     to a receiver.  The stream will be broken into packets of the specified maximum size.'''
     assert(frame.has_key(FRAME_CNT_ID))  # Every frame has to have a FRAME_CNT
-    pkt = _spead.SpeadPacket()
+    pkt = SpeadPacket()
     descriptors = frame.pop(DESCRIPTOR_ID, [])
     items, heap, offset = [], [], 0
     logger.info('itergenpackets: Converting a frame into packets')
@@ -477,7 +421,7 @@ class TransportString:
     def iterpackets(self):
         '''Iterate over all valid packets in string until the string ends or STREAM_CTRL = TERM is received.'''
         while not self.got_term_sig:
-            pkt = _spead.SpeadPacket()
+            pkt = SpeadPacket()
             try:
                 self.offset += pkt.unpack(self.data[self.offset:])
                 # Check if this pkt has a stream terminator
@@ -532,9 +476,9 @@ class TransportUDPtx:
     def write(self, data):
         self._udp_out.sendto(data, self._tx_ip_port)
 
-class TransportUDPrx(_spead.BufferSocket):
+class TransportUDPrx(BufferSocket):
     def __init__(self, port, pkt_count=128):
-        _spead.BufferSocket.__init__(self, pkt_count)
+        BufferSocket.__init__(self, pkt_count)
         self.pkts = []
         def callback(pkt): self.pkts.insert(0, pkt)
         self.set_callback(callback)
@@ -568,7 +512,7 @@ class Transmitter:
     def end(self):
         '''Send a packet signalling the end of this stream.'''
         frame = { FRAME_CNT_ID: (0, '\xff\xff\xff\xff\xff\xff'),
-            STREAM_CTRL_ID: (0, pack(DEFAULT_FMT, STREAM_CTRL_TERM_VAL)) }
+            STREAM_CTRL_ID: (0, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
         logger.info('TX.end: Terminating stream')
         self.send_frame(frame)
         del(self.t) # Prevents any further activity
@@ -585,7 +529,7 @@ def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
     from constituent packets, with packets having higher PAYLOAD_CNTs taking precedence.  Assemble frame's
     heap from the _PAYLOAD of each packet, ordered by PAYLOAD_CNT.  Finally, resolve all IDs with
     extension clauses, replacing them with binary strings from the heap.'''
-    frame = _spead.SpeadFrame()
+    frame = SpeadFrame()
     for pkt in tport.iterpackets():
         logger.info('iterframes: Packet with FRAME_CNT=%d' % (pkt.frame_cnt))
         if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterframes:'))
@@ -597,7 +541,7 @@ def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
             logger.info('iterframes: SpeadFrame.is_valid=%d' % frame.is_valid)
             if frame.is_valid: yield frame
             logger.info('iterframes: Starting new frame')
-            frame = _spead.SpeadFrame()
+            frame = SpeadFrame()
             frame.add_packet(pkt)
     logger.info('iterframes: Last packet in stream received, processing final frame.')
     logger.info('iterframes: Frame %d completed, attempting to unpack heap' % frame.frame_cnt)

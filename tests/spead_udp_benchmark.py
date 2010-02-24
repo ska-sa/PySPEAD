@@ -35,10 +35,10 @@ def transmit():
         ig.add_item(name='var%d' % i, 
             description='Description for var%d' % i,
             init_val=0)
-    ig.add_item(name='tx_time', description='Description', fmt=[('f',64)])
-    ig.add_item(name='pv_time', description='Description', fmt=[('f',64)])
+    ig.add_item(name='tx_time', description='Description', fmt='f\x00\x00\x40')
+    ig.add_item(name='pv_time', description='Description', fmt='f\x00\x00\x40')
     ig.add_item(name='data', description='Description for data',
-        shape=SHAPE, fmt=[('i',32)])
+        shape=SHAPE, fmt='i\x00\x00\x20')
     data0 = numpy.zeros(SHAPE)
     data1 = numpy.ones(SHAPE)
     ig['pv_time'] = time.time()
