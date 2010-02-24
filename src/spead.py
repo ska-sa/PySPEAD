@@ -33,13 +33,14 @@ DEBUG = False
 #def pack(fmt, *args): return _spead.pack(fmt, args)
 
 FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'
-DEFAULT_FMT = pack(FORMAT_FMT, (('u',40),))
-HDR_FMT = pack(FORMAT_FMT, (('u',24),('u',8),('u',32)))
-RAW_ITEM_FMT = pack(FORMAT_FMT, (('u',1),('u',23),('c',8),('c',8),('c',8),('c',8),('c',8)))
-ITEM_FMT = pack(FORMAT_FMT, (('u',1),('u',23),('u',40)))
-ID_FMT = pack(FORMAT_FMT, (('u',16),('u',24)))
-SHAPE_FMT = pack(FORMAT_FMT, (('u',8),('u',56)))
-STR_FMT = pack(FORMAT_FMT, (('c',8),))
+def mkfmt(*args): return pack(FORMAT_FMT, args)
+DEFAULT_FMT = mkfmt(('u',40))
+HDR_FMT = mkfmt(('u',24),('u',8),('u',32))
+RAW_ITEM_FMT = mkfmt(('u',1),('u',23),('c',8),('c',8),('c',8),('c',8),('c',8))
+ITEM_FMT = mkfmt(('u',1),('u',23),('u',40))
+ID_FMT = mkfmt(('u',16),('u',24))
+SHAPE_FMT = mkfmt(('u',8),('u',56))
+STR_FMT = mkfmt(('c',8))
 
 ITEM = {
     'FRAME_CNT':      {'ID':FRAME_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
@@ -247,7 +248,6 @@ class Item(Descriptor):
         self._changed = True
     def from_value_string(self, s):
         '''Set the value of this Item by unpacking the provided binary string.'''
-        print len(s), [self.format], self.size
         self._value, self._changed = self.unpack(s), True
     def get_value(self):
         '''Directly return the value of this Item.'''
