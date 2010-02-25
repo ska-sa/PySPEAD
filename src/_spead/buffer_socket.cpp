@@ -119,7 +119,10 @@ void *buffer_socket_data_thread(void *arg) {
 
     while (bs->run_threads) {
         // Wait for next buffer slot to fill up
-        if (pthread_mutex_trylock(&bs->ringbuf->read_ptr->read_mutex) != 0) continue;
+        if (pthread_mutex_trylock(&bs->ringbuf->read_ptr->read_mutex) != 0) {
+            usleep(10000);
+            continue;
+        }
         this_slot = bs->ringbuf->read_ptr;
         DBGPRINTF("buffer_socket_data_thread: Got read_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
         // Check if this packet has STREAM_CTRL set to STREAM_CTRL_VAL_TERM
@@ -175,7 +178,7 @@ void *buffer_socket_net_thread(void *arg) {
         // Poll socket until we have some data to write
         FD_ZERO(&readset);
         FD_SET(sock, &readset);
-        tv.tv_sec = 0; tv.tv_usec = 10000;      // 10 ms
+        tv.tv_sec = 0; tv.tv_usec = 50000;      // 10 ms
         is_ready = select(sock + 1, &readset, NULL, NULL, &tv);
         if (is_ready <= 0) {
             if (is_ready != 0 && errno != EINTR) {
