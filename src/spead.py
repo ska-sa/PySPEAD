@@ -171,7 +171,7 @@ class Descriptor:
     def pack(self, val):
         '''Convert a series of values into a binary string according to the format of this Descriptor.
         Multi-dimensonal arrays are serialized in C-like order (as opposed to Fortran-like).'''
-        if self.shape == -1 or len(self.shape) != 0:
+        if self.shape != -1 and len(self.shape) != 0:
             val = numpy.array(val)
             dim = calcdim(self.format)
             if self.shape == -1: val = numpy.reshape(val, (val.size/dim,dim))
