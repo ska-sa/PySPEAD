@@ -17,9 +17,32 @@ if   cmd.startswith('SpeadPacket'):
         while True:
             p = SpeadPacket()
             p.unpack(pkt)
+    elif cmd.split('.')[1] == 'unpack':
+        p = SpeadPacket()
+        while True: p.unpack(pkt)
+    elif cmd.split('.')[1] == 'pack':
+        p = SpeadPacket()
+        p.unpack(pkt)
+        while True: s = p.pack()
     else: ValueError(cmd)
 elif cmd.startswith('SpeadFrame'):
-    pass
+    if cmd == 'SpeadFrame':
+        while True: f = SpeadFrame()
+    elif cmd.split('.')[1] == 'add_packet':
+        p = SpeadPacket()
+        p.unpack(pkt)
+        while True:
+            f = SpeadFrame()
+            f.add_packet(p)
+    elif cmd.split('.')[1] == 'get_items':
+        p = SpeadPacket()
+        p.unpack(pkt)
+        while True:
+            f = SpeadFrame()
+            f.add_packet(p)
+            f.finalize()
+            i = f.get_items()
+    else: ValueError(cmd)
 elif cmd.startswith('BufferSocket'):
     if cmd == 'BufferSocket':
         while True: b = BufferSocket(pkt_count=8192)

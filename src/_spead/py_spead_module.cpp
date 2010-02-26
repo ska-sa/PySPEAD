@@ -176,9 +176,13 @@ int SpeadPktObj_set_payload(SpeadPktObj *self, PyObject *value, void *closure) {
 
 // Get packet items
 PyObject *SpeadPktObj_get_items(SpeadPktObj *self, void *closure) {
-    PyObject *tup=PyTuple_New(self->pkt->n_items);
     int i;
     uint64_t item;
+    PyObject *tup=PyTuple_New(self->pkt->n_items);
+    if (tup == NULL) {
+        PyErr_Format(PyExc_MemoryError, "Could not allocate tuple in SpeadPacket.get_items()");
+        return NULL;
+    }
     for (i=0; i < self->pkt->n_items; i++) {
         item = SPEAD_ITEM(self->pkt->data, i+1);
         PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iil)", SPEAD_ITEM_EXT(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_VAL(item)));
