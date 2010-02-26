@@ -541,6 +541,7 @@ int wrap_bs_pycallback(SpeadPacket *pkt, void *userdata) {
     // Call the python callback with the wrapped-up SpeadPacket
     rv = PyEval_CallObject(bso->pycallback, arglist);
     Py_DECREF(arglist);
+    Py_DECREF(pkto);
     //printf("wrap_bs_pycallback: releasing GIL\n");
     if (rv == NULL) {
         PyGILState_Release(gstate);
