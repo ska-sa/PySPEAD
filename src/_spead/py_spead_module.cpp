@@ -750,7 +750,7 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
-    PyObject *tup, *iter1, *iter2, *item1, *item2;
+    PyObject *rv, *tup, *iter1, *iter2, *item1, *item2;
     char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE], *sval;
     Py_ssize_t fmt_len, val_len;
     float fval;
@@ -784,11 +784,12 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
     if (offset != 0) tot_bytes += 1;
     //printf("Data has length %d\n", cnt);
     //printf("Allocating %d bytes\n", tot_bytes);
-    data = (char *) malloc(tot_bytes);
-    if (data == NULL) {
+    rv = PyString_FromStringAndSize(NULL, tot_bytes);
+    if (rv == NULL) {
         PyErr_Format(PyExc_MemoryError, "Could not allocate output data in spead_pack()");
         return NULL;
     }
+    data = PyString_AS_STRING(rv);
     iter1 = PyObject_GetIter(tup);
     if (iter1 == NULL) return NULL;
     // Loop over dimension of array
@@ -871,9 +872,10 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
     Py_DECREF(iter1);
     if (flag) {
         PyErr_Format(PyExc_ValueError, "data does not match format");
+        Py_DECREF(rv);
         return NULL;
     }
-    return PyString_FromStringAndSize(data, tot_bytes);
+    return rv;
 }
 
 // Module methods
