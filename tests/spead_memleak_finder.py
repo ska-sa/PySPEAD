@@ -24,6 +24,11 @@ if   cmd.startswith('SpeadPacket'):
         p = SpeadPacket()
         p.unpack(pkt)
         while True: s = p.pack()
+    elif cmd.split('.')[1] == 'set_items':
+        p = SpeadPacket()
+        i = [(0, 5, 3)] * 20
+        while True: p.items = i
+    elif cmd.split('.')[1] == 'payload': pass
     else: ValueError(cmd)
 elif cmd.startswith('SpeadFrame'):
     if cmd == 'SpeadFrame':
@@ -59,4 +64,18 @@ elif cmd.startswith('pack'):
 elif cmd.startswith('unpack'):
     s = '\x00' * 1024
     while True: d = unpack('u\x00\x00\x20', s, cnt=-1)
+elif cmd.startswith('ItemGroup'):
+    ig1, ig2 = S.ItemGroup(), S.ItemGroup()
+    ig1.add_item('var1', fmt='f\x00\x00\x40', shape=-1)
+    while True:
+        ig1['var1'] = [[0]] * 1024
+        s = ''.join([p for p in S.iter_genpackets(ig1.get_frame())])
+        tport = S.TransportString(s)
+        for f in S.iterframes(tport): ig2.update(f)
+elif cmd.startswith('iter_genpackets'):
+    ig1 = S.ItemGroup()
+    ig1.add_item('var1', fmt='f\x00\x00\x40', shape=-1)
+    ig1['var1'] = [[0]] * 1024
+    f = ig1.get_frame()
+    while True: s = ''.join([p for p in S.iter_genpackets(f)])
 else: ValueError(cmd)

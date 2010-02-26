@@ -206,7 +206,6 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
             item2 = PyIter_Next(iter2);
             if (item2 == NULL) {
                 PyErr_Format(PyExc_ValueError, "items must be a list of (extension, id, raw_value) triplets");
-                Py_DECREF(iter2);
                 break;
             }
             if (PyInt_Check(item2)) {
@@ -216,18 +215,16 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
             } else {
                 PyErr_Format(PyExc_ValueError, "items must be a list of (extension, id, raw_value) triplets");
                 Py_DECREF(item2);
-                Py_DECREF(iter2);
                 break;
             }
+            Py_DECREF(item2);
         }
-        if (i != 3) {
-            Py_DECREF(item1);
-            break;
-        }
+        Py_DECREF(iter2);
+        Py_DECREF(item1);
+        if (i != 3) break;
         n_items++;
         SPEAD_SET_ITEM(self->pkt->data,n_items,SPEAD_ITEM_BUILD(data[0],data[1],data[2]));
         data[0] = SPEAD_ITEM(self->pkt->data,n_items);
-        Py_DECREF(item1);
     }
     Py_DECREF(iter1);
     if (PyErr_Occurred()) return -1;
