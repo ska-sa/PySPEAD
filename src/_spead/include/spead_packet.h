@@ -116,7 +116,7 @@ void spead_item_wipe(SpeadItem *item) ;
       |_|                                                   */
 
 typedef struct {
-    bool is_valid;
+    int is_valid;
     int64_t frame_cnt;
     SpeadPacket *head_pkt;
     SpeadPacket *last_pkt;

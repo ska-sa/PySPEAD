@@ -424,7 +424,7 @@ static PyMethodDef SpeadFrameObj_methods[] = {
 static PyMemberDef SpeadFrameObj_members[] = {
     {"frame_cnt", T_LONG, offsetof(SpeadFrameObj, frame) +
         offsetof(SpeadFrame, frame_cnt), 0, "frame_cnt"},
-    {"is_valid", T_BOOL, offsetof(SpeadFrameObj, frame) +
+    {"is_valid", T_INT, offsetof(SpeadFrameObj, frame) +
         offsetof(SpeadFrame, is_valid), 0, "is_valid"},
     {NULL}  /* Sentinel */
 };

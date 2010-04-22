@@ -3,7 +3,7 @@ import unittest, spead as S, spead._spead as _S, bitstring, struct, sys, os
 ex_pkts = {
     '2-pkt-frame+next-pkt': [
         ''.join([
-            S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 5),
+            S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 5),
             S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
             S.pack(S.ITEM_FMT, 1, 0x3333, 0),
             S.pack(S.ITEM_FMT, 1, 0x3334, 16),
@@ -11,26 +11,26 @@ ex_pkts = {
             S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
             struct.pack('>d', 3.1415)]),
         ''.join([
-            S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
+            S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 3),
             S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
             S.pack(S.ITEM_FMT, 0, S.PAYLOAD_OFFSET_ID, 8),
             S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 16),
             struct.pack('>d', 2.7182),
             struct.pack('>d', 1.4)]),
         ''.join([
-            S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
+            S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 3),
             S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 4),
             S.pack(S.ITEM_FMT, 1, 0x3333, 0),
             S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
             struct.pack('>d', 1.57)]),],
     'normal': ''.join([
-        S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
+        S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 3),
         S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
         S.pack(S.ITEM_FMT, 1, 0x3333, 0),
         S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
         struct.pack('>d', 3.1415)]),
     '0-len-items-at-back': ''.join([
-        S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 5),
+        S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 5),
         S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
         S.pack(S.ITEM_FMT, 1, 0x3333, 0),
         S.pack(S.ITEM_FMT, 1, 0x3334, 8),
@@ -38,7 +38,7 @@ ex_pkts = {
         S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
         struct.pack('>d', 3.1415)]),
     '0-len-items-at-front-and-back': ''.join([
-        S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 5),
+        S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 5),
         S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
         S.pack(S.ITEM_FMT, 1, 0x3333, 0),
         S.pack(S.ITEM_FMT, 1, 0x3334, 0),
@@ -46,7 +46,7 @@ ex_pkts = {
         S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
         struct.pack('>d', 3.1415)]),
     '0-len-items-at-front': ''.join([
-        S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 5),
+        S.pack(S.HDR_FMT, S.MAGIC, S.VERSION, 5),
         S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
         S.pack(S.ITEM_FMT, 1, 0x3333, 0),
         S.pack(S.ITEM_FMT, 1, 0x3334, 0),
