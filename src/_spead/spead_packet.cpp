@@ -79,7 +79,8 @@ void spead_copy_bits(char *data, char *val, int off, int n_bits) {
       |_|                                                  */
 
 void spead_packet_init(SpeadPacket *pkt) {
-    pkt->frame_cnt = SPEAD_ERR;
+    pkt->heap_cnt = SPEAD_ERR;
+    pkt->heap_len = SPEAD_ERR;
     pkt->n_items = 0;
     pkt->is_stream_ctrl_term = 0;
     pkt->payload_len = 0;
@@ -91,14 +92,14 @@ void spead_packet_init(SpeadPacket *pkt) {
 // Copy pkt1 into pkt2, but don't link (i.e. not pkt->next)
 void spead_packet_copy(SpeadPacket *pkt1, SpeadPacket *pkt2) {
     int64_t j;
-    pkt2->frame_cnt     = pkt1->frame_cnt;
+    pkt2->heap_cnt     = pkt1->heap_cnt;
     pkt2->n_items       = pkt1->n_items;
     pkt2->is_stream_ctrl_term = pkt1->is_stream_ctrl_term;
     pkt2->payload_len   = pkt1->payload_len;
     pkt2->payload_off   = pkt1->payload_off;
     pkt2->payload       = pkt1->payload;
     pkt2->next          = NULL;
-    for (j=0; j < SPEAD_ITEM_BYTES * pkt1->n_items + pkt1->payload_len; j++) {
+    for (j=0; j < SPEAD_ITEMLEN * pkt1->n_items + pkt1->payload_len; j++) {
         pkt2->data[j] = pkt1->data[j];
     }
 }
@@ -109,14 +110,19 @@ void spead_packet_copy(SpeadPacket *pkt1, SpeadPacket *pkt2) {
 int64_t spead_packet_unpack_header(SpeadPacket *pkt) {
     uint64_t hdr;
     hdr = SPEAD_ITEM(pkt->data, 0);
-    if ((SPEAD_GET_MAGIC(hdr) != SPEAD_MAGIC) || (SPEAD_GET_VERSION(hdr) != SPEAD_VERSION)) return SPEAD_ERR;
+    if ((SPEAD_GET_MAGIC(hdr) != SPEAD_MAGIC) || 
+            (SPEAD_GET_VERSION(hdr) != SPEAD_VERSION) ||
+            (SPEAD_GET_ITEMSIZE(hdr) != SPEAD_ITEMSIZE) || 
+            (SPEAD_GET_ADDRSIZE(hdr) != SPEAD_ADDRSIZE)) {
+        return SPEAD_ERR;
+    }
     pkt->n_items = SPEAD_GET_NITEMS(hdr);
-    pkt->payload = pkt->data + (pkt->n_items + 1) * SPEAD_ITEM_BYTES;
-    return SPEAD_ITEM_BYTES;  // Return # of bytes read
+    pkt->payload = pkt->data + SPEAD_HEADERLEN + pkt->n_items * SPEAD_ITEMLEN;
+    return SPEAD_HEADERLEN;  // Return # of bytes read
 }
     
 /* Create array of pkt->items from 8-byte entries in packet header stored in data buffer,
- * and initialize pkt->payload_len and pkt->frame_cnt from items.
+ * and initialize pkt->payload_len and pkt->heap_cnt from items.
  * pkt must have n_items already initialized (from spead_unpack_header) */
 int64_t spead_packet_unpack_items(SpeadPacket *pkt) {
     uint64_t item;
@@ -124,16 +130,17 @@ int64_t spead_packet_unpack_items(SpeadPacket *pkt) {
     // Read each raw item, starting at 1 to skip header
     for (i=1; i <= pkt->n_items; i++) {
         item = SPEAD_ITEM(pkt->data, i);
-        //printf("item%d: ext=%d, id=%d, val=%d\n", i, SPEAD_ITEM_EXT(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_VAL(item));
+        //printf("item%d: mode=%d, id=%d, val=%d\n", i, SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item));
         switch (SPEAD_ITEM_ID(item)) {
-            case SPEAD_FRAME_CNT_ID:      pkt->frame_cnt   = (int64_t) SPEAD_ITEM_VAL(item); break;
-            case SPEAD_PAYLOAD_OFFSET_ID: pkt->payload_off = (int64_t) SPEAD_ITEM_VAL(item); break;
-            case SPEAD_PAYLOAD_LENGTH_ID: pkt->payload_len = (int64_t) SPEAD_ITEM_VAL(item); break;
-            case SPEAD_STREAM_CTRL_ID: if (SPEAD_ITEM_VAL(item) == SPEAD_STREAM_CTRL_TERM_VAL) pkt->is_stream_ctrl_term = 1; break;
+            case SPEAD_HEAP_CNT_ID:    pkt->heap_cnt    = (int64_t) SPEAD_ITEM_ADDR(item); break;
+            case SPEAD_HEAP_LEN_ID:    pkt->heap_len    = (int64_t) SPEAD_ITEM_ADDR(item); break;
+            case SPEAD_PAYLOAD_OFF_ID: pkt->payload_off = (int64_t) SPEAD_ITEM_ADDR(item); break;
+            case SPEAD_PAYLOAD_LEN_ID: pkt->payload_len = (int64_t) SPEAD_ITEM_ADDR(item); break;
+            case SPEAD_STREAM_CTRL_ID: if (SPEAD_ITEM_ADDR(item) == SPEAD_STREAM_CTRL_TERM_VAL) pkt->is_stream_ctrl_term = 1; break;
             default: break;
         }
     }
-    return pkt->n_items * SPEAD_ITEM_BYTES; // Return # of bytes read
+    return pkt->n_items * SPEAD_ITEMLEN; // Return # of bytes read
 }
 
 /*___                       _ ___ _                 
@@ -147,7 +154,7 @@ void spead_item_init(SpeadItem *item) {
     item->is_valid = 0;
     item->id = SPEAD_ERR;
     item->val = NULL;
-    item->length = SPEAD_ERR;
+    item->len = SPEAD_ERR;
     item->next = NULL;
 }
 
@@ -156,53 +163,55 @@ void spead_item_wipe(SpeadItem *item) {
     spead_item_init(item);  // Wipe this item clean
 }
     
-/*___                       _ _____                         
-/ ___| _ __   ___  __ _  __| |  ___| __ __ _ _ __ ___   ___ 
-\___ \| '_ \ / _ \/ _` |/ _` | |_ | '__/ _` | '_ ` _ \ / _ \
- ___) | |_) |  __/ (_| | (_| |  _|| | | (_| | | | | | |  __/
-|____/| .__/ \___|\__,_|\__,_|_|  |_|  \__,_|_| |_| |_|\___|
-      |_|                                                   */
+/*___                       _ _   _                  
+/ ___| _ __   ___  __ _  __| | | | | ___  __ _ _ __  
+\___ \| '_ \ / _ \/ _` |/ _` | |_| |/ _ \/ _` | '_ \ 
+ ___) | |_) |  __/ (_| | (_| |  _  |  __/ (_| | |_) |
+|____/| .__/ \___|\__,_|\__,_|_| |_|\___|\__,_| .__/ 
+      |_|                                     |_|    */
 
-void spead_frame_init(SpeadFrame *frame) {
-    frame->is_valid = 0;
-    frame->frame_cnt = SPEAD_ERR;
-    frame->head_pkt = NULL;
-    frame->last_pkt = NULL;
-    frame->head_item = NULL;
-    frame->last_item = NULL;
+void spead_heap_init(SpeadHeap *heap) {
+    heap->is_valid = 0;
+    heap->heap_cnt = SPEAD_ERR;
+    heap->heap_len = SPEAD_ERR;
+    heap->has_all_packets = SPEAD_ERR;
+    heap->head_pkt = NULL;
+    heap->last_pkt = NULL;
+    heap->head_item = NULL;
+    heap->last_item = NULL;
 }
 
-void spead_frame_wipe(SpeadFrame *frame) {
+void spead_heap_wipe(SpeadHeap *heap) {
     SpeadPacket *pkt, *next_pkt;
     SpeadItem *item, *next_item;
-    item = frame->head_item;
+    item = heap->head_item;
     while (item != NULL) {
         next_item = item->next;
         spead_item_wipe(item);
         free(item);
         item = next_item;
     }
-    // Do not touch frame->last_item b/c it was deleted above
-    pkt = frame->head_pkt;
+    // Do not touch heap->last_item: it was deleted above
+    pkt = heap->head_pkt;
     while (pkt != NULL) {
         next_pkt = pkt->next;
         free(pkt);
         pkt = next_pkt;
     }
-    // Do not touch frame->last_pkt b/c it was deleted above
-    spead_frame_init(frame); // Wipe this frame clean
+    // Do not touch heap->last_pkt: it was deleted above
+    spead_heap_init(heap); // Wipe this heap clean
 }
     
-int spead_frame_add_packet(SpeadFrame *frame, SpeadPacket *pkt) {
+int spead_heap_add_packet(SpeadHeap *heap, SpeadPacket *pkt) {
     SpeadPacket *_pkt;
     if (pkt->n_items == 0) return SPEAD_ERR;
-    if (frame->frame_cnt < 0) {  // We have a fresh frame
-        frame->frame_cnt = pkt->frame_cnt;
-        frame->head_pkt = pkt;
-        frame->last_pkt = pkt;
+    if (heap->heap_cnt < 0) {  // We have a fresh heap
+        heap->heap_cnt = pkt->heap_cnt;
+        heap->head_pkt = pkt;
+        heap->last_pkt = pkt;
     } else { // We need to insert this packet in the correct order
-        if (frame->frame_cnt != pkt->frame_cnt) return SPEAD_ERR;
-        _pkt = frame->head_pkt;
+        if (heap->heap_cnt != pkt->heap_cnt) return SPEAD_ERR;
+        _pkt = heap->head_pkt;
         // Find the right slot to insert this pkt
         while (_pkt->next != NULL && _pkt->next->payload_off < pkt->payload_off) {
             _pkt = _pkt->next;
@@ -210,35 +219,56 @@ int spead_frame_add_packet(SpeadFrame *frame, SpeadPacket *pkt) {
         // Insert the pkt
         pkt->next = _pkt->next;
         _pkt->next = pkt;
-        if (pkt->next == NULL) frame->last_pkt = pkt;
+        if (pkt->next == NULL) heap->last_pkt = pkt;
     }
-    return 0;
+    if (pkt->heap_len != SPEAD_ERR) heap->heap_len = pkt->heap_len;
+    heap->has_all_packets = SPEAD_ERR;
+    return spead_heap_got_all_packets(heap);  // Should this check be automatic like this?
 }
 
-int spead_frame_finalize(SpeadFrame *frame) {
+int spead_heap_got_all_packets(SpeadHeap *heap) {
+    SpeadPacket *pkt = heap->head_pkt;
+    if (heap->heap_len == SPEAD_ERR || pkt == NULL) return 0;  // Don't compute if we can't know the answer
+    if (heap->has_all_packets != SPEAD_ERR) return heap->has_all_packets; // Don't recompute if we do know the answer
+    heap->has_all_packets = 0;
+    while (pkt->next != NULL) {
+        if (pkt->payload_off + pkt->payload_len + 1 != pkt->next->payload_off) return 0;
+        pkt = pkt->next;
+    }
+    if (pkt->payload_off + pkt->payload_len != heap->heap_len) return 0;
+    heap->has_all_packets = 1;
+    return 1;
+}
+
+int spead_heap_finalize(SpeadHeap *heap) {
     SpeadPacket *pkt1, *pkt2;
     SpeadItem *item;
     int i, j, flag, id;
-    int64_t off, o, heaplen, rawitem1, rawitem2;
-    // Sanity check on frame
-    if (frame->head_pkt == NULL) return 0;
-    if (frame->head_item != NULL) {
-        spead_item_wipe(frame->head_item);
-        free(frame->head_item);
-        frame->head_item = NULL;
+    int64_t off, o, itemptr1, itemptr2;
+    // Sanity check on heap
+    if (heap->head_pkt == NULL) return 0;
+    // Clear any previous junk this heap may have
+    if (heap->head_item != NULL) {
+        spead_item_wipe(heap->head_item);
+        free(heap->head_item);
+        heap->head_item = NULL;
     }
-    frame->last_item = NULL;
-    heaplen = frame->last_pkt->payload_off + frame->last_pkt->payload_len;
-    pkt1 = frame->head_pkt;
+    heap->last_item = NULL;
+    if (heap->heap_len == SPEAD_ERR) {
+        // Note that a missing last packet in the heap can potentially go undetected if heap_len
+        // is unspecified and the last item value in the heap payload is dynamically sized)
+        heap->heap_len = heap->last_pkt->payload_off + heap->last_pkt->payload_len;
+    }
+    pkt1 = heap->head_pkt;
     // Loop over all items in all packets received
     while (pkt1 != NULL) {
         for (i=1; i <= pkt1->n_items; i++) {
-            rawitem1 = SPEAD_ITEM(pkt1->data, i);
-            id = SPEAD_ITEM_ID(rawitem1);
+            itemptr1 = SPEAD_ITEM(pkt1->data, i);
+            id = SPEAD_ITEM_ID(itemptr1);
             switch (id) {
-                case SPEAD_FRAME_CNT_ID: 
-                case SPEAD_PAYLOAD_OFFSET_ID:
-                case SPEAD_PAYLOAD_LENGTH_ID:
+                case SPEAD_HEAP_CNT_ID: 
+                case SPEAD_PAYLOAD_OFF_ID:
+                case SPEAD_PAYLOAD_LEN_ID:
                 case SPEAD_STREAM_CTRL_ID:
                     continue;
                 default: break;
@@ -248,36 +278,36 @@ int spead_frame_finalize(SpeadFrame *frame) {
             spead_item_init(item);
             item->is_valid = 1;
             item->id = id;
-            // Extension items must be retrieved from the packet payloads
-            if (SPEAD_ITEM_EXT(rawitem1)) {
-                off = (int64_t) SPEAD_ITEM_VAL(rawitem1);
-                // Figure out length of item by defaulting to remaining heap, then looping over 
-                // remaining rawitems (in all remaining of packets) to find start of next
-                // extension item.
-                item->length = heaplen - off;
-                flag = 0;  // Used to tell when we've found next extension item to break out
-                pkt2 = pkt1; j = i+1;  // Start with the next rawitem in this packet
+            // Direct-address items must be retrieved from the packet payloads
+            if (!SPEAD_ITEM_MODE(itemptr1)) {
+                off = (int64_t) SPEAD_ITEM_ADDR(itemptr1);
+                // Figure out len of item by defaulting to remaining heap, then looping over 
+                // remaining itemptrs (in all remaining of packets) to find start of next
+                // direct-address item.
+                item->len = heap->heap_len - off;
+                flag = 0;  // Used to tell when we've found next direct-address item to break out
+                pkt2 = pkt1; j = i+1;  // Start with the next itemptr in this packet
                 do {
                     for (; j <= pkt2->n_items; j++) {
-                        rawitem2 = SPEAD_ITEM(pkt2->data, j);
-                        if (SPEAD_ITEM_EXT(rawitem2)) {
-                            item->length = (int64_t) SPEAD_ITEM_VAL(rawitem2) - off;
+                        itemptr2 = SPEAD_ITEM(pkt2->data, j);
+                        if (SPEAD_ITEM_MODE(itemptr2)) {
+                            item->len = (int64_t) SPEAD_ITEM_ADDR(itemptr2) - off;
                             flag = 1;
                             break;
                         }
                     }
                     if (flag) break;
-                    pkt2 = pkt2->next; j = 0;  // Move on to first rawitem in next packet
+                    pkt2 = pkt2->next; j = 0;  // Move on to first itemptr in next packet
                 } while (pkt2 != NULL);
-                //printf("Allocating item of length %d\n", item->length);
-                if (item->length < 0) {  // This happens when the last packet in a frame goes missing
+                //printf("Allocating item of len %d\n", item->len);
+                if (item->len < 0) {  // This happens when the last packet in a heap goes missing
                     item->is_valid = 0;
                 } else {
-                    item->val = (char *) malloc(item->length * sizeof(char));
+                    item->val = (char *) malloc(item->len * sizeof(char));
                     if (item->val == NULL) return SPEAD_ERR;
                     // Dig through the payloads to retrieve item value
-                    pkt2 = frame->head_pkt;
-                    for (o=0; o < item->length; o++) {
+                    pkt2 = heap->head_pkt;
+                    for (o=0; o < item->len; o++) {
                         while (pkt2 != NULL && (pkt2->payload_off + pkt2->payload_len <= off + o)) {
                             //printf("Moving to next packet\n");
                             pkt2 = pkt2->next;
@@ -295,28 +325,28 @@ int spead_frame_finalize(SpeadFrame *frame) {
                         }
                     }
                 }
-            // Non-extension items must be re-converted to big-endian strings
+            // Immediate-address items must be re-converted to big-endian strings
             } else {
-                //printf("Item %d is not an extension\n", i);
-                item->length = SPEAD_ITEM_VAL_BYTES;
-                item->val = (char *) malloc(item->length * sizeof(char));
-                //printf("Allocating item of length %d\n", item->length);
+                //printf("Item %d is immediate\n", i);
+                item->len = SPEAD_ADDRLEN;
+                item->val = (char *) malloc(item->len * sizeof(char));
+                //printf("Allocating item of len %d\n", item->len);
                 if (item->val == NULL) return SPEAD_ERR;
                 // Value copy here is hardcoded to big/network endian
-                for (o=0; o < item->length; o++) {
-                    // since val is in the lsbs of rawitem1, can just grab it
-                    item->val[o] = 0xFF & (rawitem1 >> (8 * (SPEAD_ITEM_VAL_BYTES - o - 1))); // 8 bits per byte
+                for (o=0; o < item->len; o++) {
+                    // since val is in the lsbs of itemptr1, can just grab it
+                    item->val[o] = 0xFF & (itemptr1 >> (8 * (SPEAD_ADDRLEN - o - 1))); // 8 bits per byte
                 }
             }
-            // Link this new item in
-            if (frame->last_item == NULL) {
-                frame->head_item = item;
-                frame->last_item = item;
-                frame->is_valid = item->is_valid;
+            // Link this new item into the heap
+            if (heap->last_item == NULL) {
+                heap->head_item = item;
+                heap->last_item = item;
+                heap->is_valid = item->is_valid;
             } else {
-                frame->is_valid &= item->is_valid;
-                frame->last_item->next = item;
-                frame->last_item = item;
+                heap->is_valid &= item->is_valid;
+                heap->last_item->next = item;
+                heap->last_item = item;
             }
         }
         pkt1 = pkt1->next;

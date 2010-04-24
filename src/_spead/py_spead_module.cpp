@@ -39,11 +39,11 @@ PyObject *SpeadPktObj_unpack_header(SpeadPktObj *self, PyObject *args) {
     char *data;
     Py_ssize_t i, size;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
-    if (size < SPEAD_ITEM_BYTES) {
-        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, SPEAD_ITEM_BYTES);
+    if (size < SPEAD_ITEMLEN) {
+        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, SPEAD_ITEMLEN);
         return NULL;
     }
-    for (i=0; i < SPEAD_ITEM_BYTES; i++) {
+    for (i=0; i < SPEAD_ITEMLEN; i++) {
         self->pkt->data[i] = data[i];
     }
     size = spead_packet_unpack_header(self->pkt);
@@ -59,13 +59,13 @@ PyObject *SpeadPktObj_unpack_items(SpeadPktObj *self, PyObject *args) {
     char *data;
     Py_ssize_t i, size, item_bytes;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
-    item_bytes = self->pkt->n_items * SPEAD_ITEM_BYTES;
+    item_bytes = self->pkt->n_items * SPEAD_ITEMLEN;
     if (size < item_bytes) {
         PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes);
         return NULL;
     }
     for (i=0; i < item_bytes; i++) {
-        self->pkt->data[i + SPEAD_ITEM_BYTES] = data[i];
+        self->pkt->data[i + SPEAD_ITEMLEN] = data[i];
     }
     size = spead_packet_unpack_items(self->pkt);
     if (size == SPEAD_ERR) {
@@ -80,52 +80,56 @@ PyObject *SpeadPktObj_unpack(SpeadPktObj *self, PyObject *args) {
     char *data;
     Py_ssize_t i, size, item_bytes;
     if (!PyArg_ParseTuple(args, "s#", &data, &size)) return NULL;
-    if (size < SPEAD_ITEM_BYTES) {
-        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, SPEAD_ITEM_BYTES);
+    if (size < SPEAD_ITEMLEN) {
+        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, SPEAD_ITEMLEN);
         return NULL;
     }
-    for (i=0; i < SPEAD_ITEM_BYTES; i++) {
+    for (i=0; i < SPEAD_ITEMLEN; i++) {
         self->pkt->data[i] = data[i];
     }
     if (spead_packet_unpack_header(self->pkt) == SPEAD_ERR) {
         PyErr_Format(PyExc_ValueError, "data does not represent a SPEAD packet");
         return NULL;
     }
-    item_bytes = self->pkt->n_items * SPEAD_ITEM_BYTES;
-    if (size < item_bytes + SPEAD_ITEM_BYTES) {
-        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes + SPEAD_ITEM_BYTES);
+    item_bytes = self->pkt->n_items * SPEAD_ITEMLEN;
+    if (size < item_bytes + SPEAD_ITEMLEN) {
+        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes + SPEAD_ITEMLEN);
         return NULL;
     }
     for (i=0; i < item_bytes; i++) {
-        self->pkt->data[i + SPEAD_ITEM_BYTES] = data[i + SPEAD_ITEM_BYTES];
+        self->pkt->data[i + SPEAD_ITEMLEN] = data[i + SPEAD_ITEMLEN];
     }
     spead_packet_unpack_items(self->pkt);
-    if (SPEAD_ITEM_BYTES + item_bytes + self->pkt->payload_len > SPEAD_MAX_PACKET_SIZE) {
-        PyErr_Format(PyExc_ValueError, "packet size (%d) exceeds max of %d bytes", size, SPEAD_MAX_PACKET_SIZE);
+    if (SPEAD_ITEMLEN + item_bytes + self->pkt->payload_len > SPEAD_MAX_PACKET_LEN) {
+        PyErr_Format(PyExc_ValueError, "packet size (%d) exceeds max of %d bytes", size, SPEAD_MAX_PACKET_LEN);
         return NULL;
-    } else if (size < item_bytes + SPEAD_ITEM_BYTES + self->pkt->payload_len) {
-        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes + SPEAD_ITEM_BYTES);
+    } else if (size < item_bytes + SPEAD_ITEMLEN + self->pkt->payload_len) {
+        PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, item_bytes + SPEAD_ITEMLEN);
         return NULL;
     }
     for (i=0; i < self->pkt->payload_len; i++) {
-        self->pkt->payload[i] = data[i + item_bytes + SPEAD_ITEM_BYTES];
+        self->pkt->payload[i] = data[i + item_bytes + SPEAD_ITEMLEN];
     }
-    return Py_BuildValue("l", SPEAD_ITEM_BYTES + item_bytes + self->pkt->payload_len);
+    return Py_BuildValue("l", SPEAD_ITEMLEN + item_bytes + self->pkt->payload_len);
 }
 
 // Pack all to a string
 PyObject *SpeadPktObj_pack(SpeadPktObj *self) {
     Py_ssize_t size;
-    size = SPEAD_ITEM_BYTES * (self->pkt->n_items + 1) + self->pkt->payload_len;
-    if (size <= 0 || size > SPEAD_MAX_PACKET_SIZE) {
+    size = SPEAD_ITEMLEN * (self->pkt->n_items + 1) + self->pkt->payload_len;
+    if (size <= 0 || size > SPEAD_MAX_PACKET_LEN) {
         PyErr_Format(PyExc_ValueError, "This packet is uninitialized or malformed.  Cannot currently pack");
         return NULL;
     }
     return Py_BuildValue("s#", self->pkt->data, size);
 }
 
-PyObject *SpeadPktObj_get_framecnt(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->frame_cnt);
+PyObject *SpeadPktObj_get_heapcnt(SpeadPktObj *self, void *closure) {
+    return Py_BuildValue("l", self->pkt->heap_cnt);
+}
+
+PyObject *SpeadPktObj_get_heaplen(SpeadPktObj *self, void *closure) {
+    return Py_BuildValue("l", self->pkt->heap_len);
 }
 
 PyObject *SpeadPktObj_get_nitems(SpeadPktObj *self, void *closure) {
@@ -185,7 +189,7 @@ PyObject *SpeadPktObj_get_items(SpeadPktObj *self, void *closure) {
     }
     for (i=0; i < self->pkt->n_items; i++) {
         item = SPEAD_ITEM(self->pkt->data, i+1);
-        PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iil)", SPEAD_ITEM_EXT(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_VAL(item)));
+        PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iil)", SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item)));
     }
     return tup;
 }
@@ -250,7 +254,8 @@ static PyMethodDef SpeadPktObj_methods[] = {
 };
 
 static PyGetSetDef SpeadPktObj_getseters[] = {
-    {"frame_cnt", (getter)SpeadPktObj_get_framecnt, NULL, "frame_cnt", NULL},
+    {"heap_cnt", (getter)SpeadPktObj_get_heapcnt, NULL, "heap_cnt", NULL},
+    {"heap_len", (getter)SpeadPktObj_get_heaplen, NULL, "heap_len", NULL},
     {"n_items", (getter)SpeadPktObj_get_nitems, NULL, "n_items", NULL},
     {"is_stream_ctrl_term", (getter)SpeadPktObj_get_isstreamctrlterm, NULL, "is_stream_ctrl_term", NULL},
     {"payload_len", (getter)SpeadPktObj_get_payloadlen, NULL, "payload_len", NULL},
@@ -302,45 +307,45 @@ PyTypeObject SpeadPktType = {
     SpeadPktObj_new,       /* tp_new */
 };
 
-/*___                       _ _____                         
-/ ___| _ __   ___  __ _  __| |  ___| __ __ _ _ __ ___   ___ 
-\___ \| '_ \ / _ \/ _` |/ _` | |_ | '__/ _` | '_ ` _ \ / _ \
- ___) | |_) |  __/ (_| | (_| |  _|| | | (_| | | | | | |  __/
-|____/| .__/ \___|\__,_|\__,_|_|  |_|  \__,_|_| |_| |_|\___|
-      |_|                                                   */
+/*___                       _ _   _                  
+/ ___| _ __   ___  __ _  __| | | | | ___  __ _ _ __  
+\___ \| '_ \ / _ \/ _` |/ _` | |_| |/ _ \/ _` | '_ \ 
+ ___) | |_) |  __/ (_| | (_| |  _  |  __/ (_| | |_) |
+|____/| .__/ \___|\__,_|\__,_|_| |_|\___|\__,_| .__/ 
+      |_|                                     |_|    */
 
 // Deallocate memory when Python object is deleted
-static void SpeadFrameObj_dealloc(SpeadFrameObj* self) {
-    // self->frame is sharing references to pkts with pypkts in self->list_of_pypkts
+static void SpeadHeapObj_dealloc(SpeadHeapObj* self) {
+    // self->heap is sharing references to pkts with pypkts in self->list_of_pypkts
     // we have to first unlink the packets so only Python deallocates packets
-    self->frame.head_pkt = NULL;  
+    self->heap.head_pkt = NULL;  
     Py_DECREF(self->list_of_pypkts);
-    spead_frame_wipe(&self->frame);
+    spead_heap_wipe(&self->heap);
     self->ob_type->tp_free((PyObject*)self);
 }
 
 // Allocate memory for Python object 
-static PyObject *SpeadFrameObj_new(PyTypeObject *type,
+static PyObject *SpeadHeapObj_new(PyTypeObject *type,
         PyObject *args, PyObject *kwds) {
-    SpeadFrameObj *self;
-    self = (SpeadFrameObj *) type->tp_alloc(type, 0);
+    SpeadHeapObj *self;
+    self = (SpeadHeapObj *) type->tp_alloc(type, 0);
     return (PyObject *) self;
 }
 
 // Initialize object (__init__)
-static int SpeadFrameObj_init(SpeadFrameObj *self) {
-    spead_frame_init(&self->frame);
-    // This holds pypkts in spead_frame to prevent them from being GC'd
+static int SpeadHeapObj_init(SpeadHeapObj *self) {
+    spead_heap_init(&self->heap);
+    // This holds pypkts in spead_heap to prevent them from being GC'd
     self->list_of_pypkts = PyList_New(0);
     return 0;
 }
 
-// Add a packet to the frame
-PyObject *SpeadFrameObj_add_packet(SpeadFrameObj *self, PyObject *args) {
+// Add a packet to the heap
+PyObject *SpeadHeapObj_add_packet(SpeadHeapObj *self, PyObject *args) {
     SpeadPktObj *pkto;
     if (!PyArg_ParseTuple(args, "O!", &SpeadPktType, &pkto)) return NULL;
-    if (spead_frame_add_packet(&self->frame, pkto->pkt) == SPEAD_ERR) {
-        PyErr_Format(PyExc_ValueError, "SpeadPacket not part of frame, or it is incorrectly initialized");
+    if (spead_heap_add_packet(&self->heap, pkto->pkt) == SPEAD_ERR) {
+        PyErr_Format(PyExc_ValueError, "SpeadPacket not part of heap, or it is incorrectly initialized");
         return NULL;
     }
     // Hold pkto in list of safekeeping (keep it from being GC'd)
@@ -349,45 +354,45 @@ PyObject *SpeadFrameObj_add_packet(SpeadFrameObj *self, PyObject *args) {
     return Py_None;
 }
 
-// Add a packet to the frame
-PyObject *SpeadFrameObj_finalize(SpeadFrameObj *self) {
-    if (spead_frame_finalize(&self->frame) == SPEAD_ERR) {
-        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.finalize()");
+// Add a packet to the heap
+PyObject *SpeadHeapObj_finalize(SpeadHeapObj *self) {
+    if (spead_heap_finalize(&self->heap) == SPEAD_ERR) {
+        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadHeap.finalize()");
         return NULL;
     }
     Py_INCREF(Py_None);
     return Py_None;
 }
 
-// Get the final items from a frame
-PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
+// Get the final items from a heap
+PyObject *SpeadHeapObj_get_items(SpeadHeapObj *self) {
     int result;
     SpeadItem *item;
     PyObject *rv, *key, *value;
-    if (self->frame.head_item == NULL) {
-        PyErr_Format(PyExc_RuntimeError, "SpeadFrame was not finalized before SpeadFrame.get_items() was called");
+    if (self->heap.head_item == NULL) {
+        PyErr_Format(PyExc_RuntimeError, "SpeadHeap was not finalized before SpeadHeap.get_items() was called");
         return NULL;
     }
     rv = PyDict_New();
     if (rv == NULL) {
-        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.finalize()");
+        PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadHeap.finalize()");
         return NULL;
     }
-    // Every frame should have a list of descriptors to process
+    // Every heap should have a list of descriptors to process
     key = PyInt_FromLong(SPEAD_DESCRIPTOR_ID);
     value = PyList_New(0);
     PyDict_SetItem(rv, key, value);
     Py_DECREF(key);
     Py_DECREF(value);
-    item = self->frame.head_item;
+    item = self->heap.head_item;
     while (item != NULL) {
         if (item->is_valid) {
             // Build key:value pair
             key = PyInt_FromLong(item->id);
-            if (item->length == 0) {
+            if (item->len == 0) {
                 value = PyString_FromString("");
             } else {
-                value = PyString_FromStringAndSize(item->val,item->length);
+                value = PyString_FromStringAndSize(item->val,item->len);
             }
             // For DESCRIPTORs only, repeat item entries appear in a list
             if (item->id == SPEAD_DESCRIPTOR_ID) {
@@ -398,7 +403,7 @@ PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
                 result = PyDict_SetItem(rv, key, value);
             }
             if (result == -1) {
-                PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadFrame.get_items()");
+                PyErr_Format(PyExc_MemoryError, "Memory allocation failed in SpeadHeap.get_items()");
                 return NULL;
             } 
             // Release ownership of key and value (they live in the dict now)
@@ -411,31 +416,31 @@ PyObject *SpeadFrameObj_get_items(SpeadFrameObj *self) {
 }
 
 // Bind methods to object
-static PyMethodDef SpeadFrameObj_methods[] = {
-    {"add_packet", (PyCFunction)SpeadFrameObj_add_packet, METH_VARARGS,
-        "add_packet(SpeadPacket)\nAdd SpeadPacket to this frame.  A fresh SpeadFrame will accept packets with any FRAME_CNT, but thereafter will only accept ones with the same FRAME_CNT.  Raise ValueError on failure."},
-    {"finalize", (PyCFunction)SpeadFrameObj_finalize, METH_NOARGS,
-        "finalize()\nTry to finalize the values of all items in this frame.  Check SpeadFrame.is_valid to see if all values were able to be finalized."},
-    {"get_items", (PyCFunction)SpeadFrameObj_get_items, METH_NOARGS,
-        "get_items()\nReturn a dictionary of id:value pairs for all valid items in a finalized frame."},
+static PyMethodDef SpeadHeapObj_methods[] = {
+    {"add_packet", (PyCFunction)SpeadHeapObj_add_packet, METH_VARARGS,
+        "add_packet(SpeadPacket)\nAdd SpeadPacket to this heap.  A fresh SpeadHeap will accept packets with any HEAP_CNT, but thereafter will only accept ones with the same HEAP_CNT.  Raise ValueError on failure.  Returns 1 if heap is known to be complete."},
+    {"finalize", (PyCFunction)SpeadHeapObj_finalize, METH_NOARGS,
+        "finalize()\nTry to finalize the values of all items in this heap.  Check SpeadHeap.is_valid to see if all values were able to be finalized."},
+    {"get_items", (PyCFunction)SpeadHeapObj_get_items, METH_NOARGS,
+        "get_items()\nReturn a dictionary of id:value pairs for all valid items in a finalized heap."},
     {NULL}  // Sentinel
 };
 
-static PyMemberDef SpeadFrameObj_members[] = {
-    {"frame_cnt", T_LONG, offsetof(SpeadFrameObj, frame) +
-        offsetof(SpeadFrame, frame_cnt), 0, "frame_cnt"},
-    {"is_valid", T_INT, offsetof(SpeadFrameObj, frame) +
-        offsetof(SpeadFrame, is_valid), 0, "is_valid"},
+static PyMemberDef SpeadHeapObj_members[] = {
+    {"heap_cnt", T_LONG, offsetof(SpeadHeapObj, heap) +
+        offsetof(SpeadHeap, heap_cnt), 0, "heap_cnt"},
+    {"is_valid", T_INT, offsetof(SpeadHeapObj, heap) +
+        offsetof(SpeadHeap, is_valid), 0, "is_valid"},
     {NULL}  /* Sentinel */
 };
 
-PyTypeObject SpeadFrameType = {
+PyTypeObject SpeadHeapType = {
     PyObject_HEAD_INIT(NULL)
     0,                         /*ob_size*/
-    "SpeadFrame", /*tp_name*/
-    sizeof(SpeadFrameObj), /*tp_basicsize*/
+    "SpeadHeap", /*tp_name*/
+    sizeof(SpeadHeapObj), /*tp_basicsize*/
     0,                         /*tp_itemsize*/
-    (destructor)SpeadFrameObj_dealloc, /*tp_dealloc*/
+    (destructor)SpeadHeapObj_dealloc, /*tp_dealloc*/
     0,                         /*tp_print*/
     0,                         /*tp_getattr*/
     0,                         /*tp_setattr*/
@@ -451,24 +456,24 @@ PyTypeObject SpeadFrameType = {
     0,                         /*tp_setattro*/
     0,                         /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,        /*tp_flags*/
-    "This class provides a basic interface for examining Spead frames.  SpeadFrame()",       /* tp_doc */
+    "This class provides a basic interface for examining Spead heaps.  SpeadHeap()",       /* tp_doc */
     0,                     /* tp_traverse */
     0,                     /* tp_clear */
     0,                     /* tp_richcompare */
     0,                     /* tp_weaklistoffset */
     0,                     /* tp_iter */
     0,                     /* tp_iternext */
-    SpeadFrameObj_methods,     /* tp_methods */
-    SpeadFrameObj_members,     /* tp_members */
+    SpeadHeapObj_methods,     /* tp_methods */
+    SpeadHeapObj_members,     /* tp_members */
     0,                         /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
     0,                         /* tp_descr_set */
     0,                         /* tp_dictoffset */
-    (initproc)SpeadFrameObj_init,      /* tp_init */
+    (initproc)SpeadHeapObj_init,      /* tp_init */
     0,                         /* tp_alloc */
-    SpeadFrameObj_new,       /* tp_new */
+    SpeadHeapObj_new,       /* tp_new */
 };
 
 /*___         __  __           ____             _        _   
@@ -655,10 +660,10 @@ PyTypeObject BsockType = {
 int _spead_unpack_fmt(char *fmt, Py_ssize_t fmt_len, char *fmt_types, int *fmt_bits) {
     int n_fmts, i,  flag=0, tot_fmt_bits=0;
     uint32_t fmt_item;
-    if (fmt_len <= 0 || fmt_len % SPEAD_FMT_BYTES != 0 || fmt_len / SPEAD_FMT_BYTES > SPEAD_MAX_FMT_SIZE)
+    if (fmt_len <= 0 || fmt_len % SPEAD_FMT_LEN != 0 || fmt_len / SPEAD_FMT_LEN > SPEAD_MAX_FMT_LEN)
         return -1;
     // Validate fmt
-    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    n_fmts = fmt_len / SPEAD_FMT_LEN;
     for (i=0; i < n_fmts; i++) {
         fmt_item = SPEAD_FMT(fmt,i);
         fmt_types[i] = SPEAD_FMT_GET_TYPE(fmt_item);
@@ -684,13 +689,13 @@ int _spead_unpack_fmt(char *fmt, Py_ssize_t fmt_len, char *fmt_types, int *fmt_b
         
 PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
     PyObject *rv, *tup;
-    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE];
+    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_LEN];
     Py_ssize_t fmt_len, data_len;
     uint64_t u64;
     int64_t i64;
     uint32_t u32;
     uint8_t u8;
-    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits=0, offset=0;
+    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_LEN], tot_fmt_bits=0, offset=0;
     long cnt=1, j;
     static char *kwlist[] = {"fmt", "data", "cnt", "offset", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#s#|li", kwlist, &fmt, &fmt_len, &data, &data_len, &cnt, &offset))
@@ -704,7 +709,7 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
         PyErr_Format(PyExc_ValueError, "Invalid fmt string");
         return NULL;
     }
-    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    n_fmts = fmt_len / SPEAD_FMT_LEN;
     // Check if this is  dynamically sized variable
     if (cnt < 0) cnt = data_len * 8 / tot_fmt_bits; // 8 bits per byte
     // Make sure we have enough data
@@ -753,14 +758,14 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
 
 PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
     PyObject *rv, *tup, *iter1, *iter2, *item1, *item2;
-    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_SIZE], *sval;
+    char *fmt, *data, fmt_types[SPEAD_MAX_FMT_LEN], *sval;
     Py_ssize_t fmt_len, val_len;
     float fval;
     double dval;
     uint64_t u64val;
     uint32_t u32val;
     int64_t i64val;
-    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_SIZE], tot_fmt_bits, flag=0, offset=0;
+    int n_fmts, i, fmt_bits[SPEAD_MAX_FMT_LEN], tot_fmt_bits, flag=0, offset=0;
     long cnt, j, tot_bytes;
     static char *kwlist[] = {"fmt", "data", "offset", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#O|i", kwlist, &fmt, &fmt_len, &tup, &offset))
@@ -774,7 +779,7 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
         PyErr_Format(PyExc_ValueError, "Invalid fmt string");
         return NULL;
     }
-    n_fmts = fmt_len / SPEAD_FMT_BYTES;
+    n_fmts = fmt_len / SPEAD_FMT_LEN;
     //printf("Format has length %d\n", n_fmts);
     //printf("Format has %d bits\n", tot_fmt_bits);
     cnt = PyObject_Length(tup);
@@ -899,29 +904,31 @@ PyMODINIT_FUNC init_spead(void) {
     SpeadPktType.tp_new = PyType_GenericNew;
     BsockType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&SpeadPktType) < 0) return;
-    if (PyType_Ready(&SpeadFrameType) < 0) return;
+    if (PyType_Ready(&SpeadHeapType) < 0) return;
     if (PyType_Ready(&BsockType) < 0) return;
     m = Py_InitModule3("_spead", spead_methods,
     "A module for handling low-level (high performance) SPEAD packet manipulation.");
     Py_INCREF(&BsockType);
     PyModule_AddObject(m, "BufferSocket", (PyObject *)&BsockType);
-    Py_INCREF(&SpeadFrameType);
-    PyModule_AddObject(m, "SpeadFrame", (PyObject *)&SpeadFrameType);
+    Py_INCREF(&SpeadHeapType);
+    PyModule_AddObject(m, "SpeadHeap", (PyObject *)&SpeadHeapType);
     Py_INCREF(&SpeadPktType);
     PyModule_AddObject(m, "SpeadPacket", (PyObject *)&SpeadPktType);
     PyModule_AddIntConstant(m, "MAGIC", SPEAD_MAGIC);
     PyModule_AddIntConstant(m, "VERSION", SPEAD_VERSION);
-    PyModule_AddIntConstant(m, "FRAME_CNT_ID", SPEAD_FRAME_CNT_ID);
-    PyModule_AddIntConstant(m, "PAYLOAD_OFFSET_ID", SPEAD_PAYLOAD_OFFSET_ID);
-    PyModule_AddIntConstant(m, "PAYLOAD_LENGTH_ID", SPEAD_PAYLOAD_LENGTH_ID);
+    PyModule_AddIntConstant(m, "MAX_PACKET_LEN", SPEAD_MAX_PACKET_LEN);
+    PyModule_AddIntConstant(m, "MAX_FMT_LEN", SPEAD_MAX_FMT_LEN);
+    PyModule_AddIntConstant(m, "HEAP_CNT_ID", SPEAD_HEAP_CNT_ID);
+    PyModule_AddIntConstant(m, "PAYLOAD_OFF_ID", SPEAD_PAYLOAD_OFF_ID);
+    PyModule_AddIntConstant(m, "PAYLOAD_LEN_ID", SPEAD_PAYLOAD_LEN_ID);
     PyModule_AddIntConstant(m, "DESCRIPTOR_ID", SPEAD_DESCRIPTOR_ID);
     PyModule_AddIntConstant(m, "STREAM_CTRL_ID", SPEAD_STREAM_CTRL_ID);
     PyModule_AddIntConstant(m, "STREAM_CTRL_TERM_VAL", SPEAD_STREAM_CTRL_TERM_VAL);
-    PyModule_AddIntConstant(m, "ITEM_BYTES", SPEAD_ITEM_BYTES);
-    PyModule_AddIntConstant(m, "FMT_BYTES", SPEAD_FMT_BYTES);
-    PyModule_AddIntConstant(m, "IVAL_BITS", 8*SPEAD_ITEM_VAL_BYTES);
-    PyModule_AddIntConstant(m, "IVAL_BYTES", SPEAD_ITEM_VAL_BYTES);
-    PyModule_AddIntConstant(m, "MAX_PACKET_SIZE", SPEAD_MAX_PACKET_SIZE);
-    PyModule_AddIntConstant(m, "MAX_FMT_SIZE", SPEAD_MAX_FMT_SIZE);
+    PyModule_AddIntConstant(m, "ERR", SPEAD_ERR);
+    PyModule_AddIntConstant(m, "ITEMLEN", SPEAD_ITEMLEN);
+    PyModule_AddIntConstant(m, "ITEMSIZE", SPEAD_ITEMSIZE);
+    PyModule_AddIntConstant(m, "ADDRLEN", SPEAD_ADDRLEN);
+    PyModule_AddIntConstant(m, "ADDRSIZE", SPEAD_ADDRSIZE);
+    PyModule_AddIntConstant(m, "FMT_LEN", SPEAD_FMT_LEN);
 }
 

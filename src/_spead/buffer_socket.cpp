@@ -52,8 +52,8 @@ void ring_buffer_wipe(RingBuffer *rb) {
 |____/ \__,_|_| |_|  \___|_|  |____/ \___/ \___|_|\_\___|\__|*/
 
 int default_callback(SpeadPacket *pkt, void *userdata) {
-    printf("    Readout packet: frame_cnt=%d, n_items=%d, payload_len=%d\n, payload_off=%d\n", 
-            pkt->frame_cnt, pkt->n_items, pkt->payload_len, pkt->payload_off);
+    printf("    Readout packet: heap_cnt=%d, n_items=%d, payload_len=%d\n, payload_off=%d\n", 
+            pkt->heap_cnt, pkt->n_items, pkt->payload_len, pkt->payload_off);
     free(pkt);
     return 0;
 }
@@ -202,7 +202,7 @@ void *buffer_socket_net_thread(void *arg) {
             return NULL;
         }
         spead_packet_init(pkt);
-        num_bytes = recvfrom(sock, pkt->data, SPEAD_MAX_PACKET_SIZE, 0, NULL, NULL);
+        num_bytes = recvfrom(sock, pkt->data, SPEAD_MAX_PACKET_LEN, 0, NULL, NULL);
         DBGPRINTF("buffer_socket_net_thread: Received %d bytes\n", num_bytes);
         DBGPRINTF("buffer_socket_net_thread: Releasing read_mutex for slot %d\n", this_slot - bs->ringbuf->list_ptr);
         this_slot->pkt = pkt;

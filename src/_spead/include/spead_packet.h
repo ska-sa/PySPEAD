@@ -17,41 +17,53 @@
 #endif
 #endif
 
-// Constants
-#define SPEAD_MAGIC                 0x4b5254
-#define SPEAD_VERSION               3
+// Flavor constants
+#define SPEAD_MAGIC                 0x83
+#define SPEAD_VERSION               4
+#define SPEAD_ITEMSIZE              64
+#define SPEAD_ADDRSIZE              40
+#define SPEAD_ITEMLEN             (SPEAD_ITEMSIZE/8)
+#define SPEAD_ADDRLEN             (SPEAD_ADDRSIZE/8)
 
-#define SPEAD_FRAME_CNT_ID          0x01
-#define SPEAD_PAYLOAD_OFFSET_ID     0x02
-#define SPEAD_PAYLOAD_LENGTH_ID     0x03
-#define SPEAD_DESCRIPTOR_ID         0x04
-#define SPEAD_STREAM_CTRL_ID        0x05
+#define SPEAD_ITEMMASK              0xFFFFFFFFFFFFFFFFLL
+#define SPEAD_ADDRMASK              (SPEAD_ITEMMASK >> (SPEAD_ITEMSIZE-SPEAD_ADDRSIZE))
+#define SPEAD_IDMASK                (SPEAD_ITEMMASK >> (SPEAD_ADDRSIZE+1))
+#define SPEAD_ADDRMODEMASK          0x1LL
+
+#define SPEAD_MAX_PACKET_LEN       9200
+#define SPEAD_MAX_FMT_LEN          1024
+
+// Reserved Item IDs
+#define SPEAD_HEAP_CNT_ID           0x01
+#define SPEAD_HEAP_LEN_ID           0x02
+#define SPEAD_PAYLOAD_OFF_ID     0x03
+#define SPEAD_PAYLOAD_LEN_ID     0x04
+#define SPEAD_DESCRIPTOR_ID         0x05
+#define SPEAD_STREAM_CTRL_ID        0x06
 
 #define SPEAD_STREAM_CTRL_TERM_VAL  0x02
-
-#define SPEAD_ITEM_BYTES            8
-#define SPEAD_FMT_BYTES             4
-#define SPEAD_ITEM_VAL_BYTES        5
-#define SPEAD_MAX_PACKET_SIZE       9200
-#define SPEAD_MAX_FMT_SIZE          1024
-
 #define SPEAD_ERR                   -1
 
-// Macros
-#define SPEAD_GET_MAGIC(hdr) (0xFFFFFF & ((hdr) >> 40))
-#define SPEAD_GET_VERSION(hdr) (0xFF & ((hdr) >> 32))
-#define SPEAD_GET_NITEMS(hdr) ((int) 0x7FFFFFFF & (hdr))
+// Header Macros
+#define SPEAD_HEADERLEN             8
+#define SPEAD_HEADER_BUILD(nitems) ((((uint64_t) SPEAD_MAGIC) << 56) | (((uint64_t) SPEAD_VERSION) << 48) | (((uint64_t) SPEAD_ITEMSIZE) << 40) | (((uint64_t) SPEAD_ADDRSIZE) << 32) | (0xFFFFLL & (nitems)))
+#define SPEAD_GET_MAGIC(hdr) (0xFF & ((hdr) >> 56))
+#define SPEAD_GET_VERSION(hdr) (0xFF & ((hdr) >> 48))
+#define SPEAD_GET_ITEMSIZE(hdr) (0xFF & ((hdr) >> 40))
+#define SPEAD_GET_ADDRSIZE(hdr) (0xFF & ((hdr) >> 32))
+#define SPEAD_GET_NITEMS(hdr) ((int) 0xFFFF & (hdr))
 
-#define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + (n) * SPEAD_ITEM_BYTES))[0]))
-#define SPEAD_ITEM_EXT(item) ((bool) 0x1 & (item >> 63))
-#define SPEAD_ITEM_ID(item) ((int) 0x7FFFFF & (item >> 40))
-#define SPEAD_ITEM_VAL(item) ((uint64_t) 0xFFFFFFFFFFLL & item)
+// ItemPointer Macros
+#define SPEAD_ITEM_BUILD(mode,id,val) (((SPEAD_ADDRMODEMASK & (mode)) << (SPEAD_ITEMSIZE-1)) | ((SPEAD_IDMASK & (id)) << (SPEAD_ADDRSIZE)) | (SPEAD_ADDRMASK & (val)))
+#define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + (n) * SPEAD_ITEMLEN))[0]))
+#define SPEAD_ITEM_MODE(item) ((int) SPEAD_ADDRMODEMASK & (item >> (SPEAD_ITEMSIZE-1)))
+#define SPEAD_ITEM_ID(item) ((int) SPEAD_IDMASK & (item >> SPEAD_ADDRSIZE))
+#define SPEAD_ITEM_ADDR(item) ((uint64_t) SPEAD_ADDRMASK & item)
+#define SPEAD_SET_ITEM(data,n,pkitem) (((uint64_t *)(data + (n) * SPEAD_ITEMLEN))[0] = htonll(pkitem))
 
-#define SPEAD_HEADER_BUILD(nitems) ((((uint64_t) SPEAD_MAGIC) << 40) | (((uint64_t) SPEAD_VERSION) << 32) | (0xFFFFFFFFLL & (nitems)))
-#define SPEAD_ITEM_BUILD(ext,id,val) (((0x1LL & (ext)) << 63) | ((0x7FFFFFLL & (id)) << 40) | (0xFFFFFFFFFFLL & (val)))
-#define SPEAD_SET_ITEM(data,n,pkitem) (((uint64_t *)(data + (n) * SPEAD_ITEM_BYTES))[0] = htonll(pkitem))
-
-#define SPEAD_FMT(data,n) (ntohl(((uint32_t *)(data + (n) * SPEAD_FMT_BYTES))[0]))
+// Format Macros
+#define SPEAD_FMT_LEN             4
+#define SPEAD_FMT(data,n) (ntohl(((uint32_t *)(data + (n) * SPEAD_FMT_LEN))[0]))
 #define SPEAD_FMT_GET_TYPE(fmt) ((char) 0xFF & (fmt >> 24))
 #define SPEAD_FMT_GET_NBITS(fmt) ((int) 0xFFFFFF & fmt)
 
@@ -73,14 +85,15 @@ void spead_copy_bits(char *data, char *val, int off, int n_bits);
       |_|                                                  */
 
 struct spead_packet {
-    int64_t frame_cnt;
+    int64_t heap_cnt;
+    int64_t heap_len;
     int n_items;
-    bool is_stream_ctrl_term;
+    int is_stream_ctrl_term;
     int64_t payload_len;
     int64_t payload_off;
-    char data[SPEAD_MAX_PACKET_SIZE];
+    char data[SPEAD_MAX_PACKET_LEN];
     char *payload;  // Will point to spot in data where payload starts
-    struct spead_packet *next; // For chaining packets together a frame
+    struct spead_packet *next; // For chaining packets together a heap
 };
 typedef struct spead_packet SpeadPacket;
 
@@ -97,10 +110,10 @@ int64_t spead_packet_unpack_items(SpeadPacket *pkt);
       |_|                                           */
 
 struct spead_item {
-    bool is_valid;
+    int is_valid;
     int id;
     char *val;
-    int64_t length;
+    int64_t len;
     struct spead_item *next;
 };
 typedef struct spead_item SpeadItem;
@@ -108,25 +121,28 @@ typedef struct spead_item SpeadItem;
 void spead_item_init(SpeadItem *item) ;
 void spead_item_wipe(SpeadItem *item) ;
 
-/*___                       _ _____                         
-/ ___| _ __   ___  __ _  __| |  ___| __ __ _ _ __ ___   ___ 
-\___ \| '_ \ / _ \/ _` |/ _` | |_ | '__/ _` | '_ ` _ \ / _ \
- ___) | |_) |  __/ (_| | (_| |  _|| | | (_| | | | | | |  __/
-|____/| .__/ \___|\__,_|\__,_|_|  |_|  \__,_|_| |_| |_|\___|
-      |_|                                                   */
+/*___                       _ _   _                  
+/ ___| _ __   ___  __ _  __| | | | | ___  __ _ _ __  
+\___ \| '_ \ / _ \/ _` |/ _` | |_| |/ _ \/ _` | '_ \ 
+ ___) | |_) |  __/ (_| | (_| |  _  |  __/ (_| | |_) |
+|____/| .__/ \___|\__,_|\__,_|_| |_|\___|\__,_| .__/ 
+      |_|                                     |_|    */
 
 typedef struct {
     int is_valid;
-    int64_t frame_cnt;
+    int64_t heap_cnt;
+    int64_t heap_len;
+    int has_all_packets;
     SpeadPacket *head_pkt;
     SpeadPacket *last_pkt;
     SpeadItem *head_item;
     SpeadItem *last_item;
-} SpeadFrame;
+} SpeadHeap;
 
-void spead_frame_init(SpeadFrame *frame) ;
-void spead_frame_wipe(SpeadFrame *frame) ;
-int spead_frame_add_packet(SpeadFrame *frame, SpeadPacket *pkt) ;
-int spead_frame_finalize(SpeadFrame *frame) ;
+void spead_heap_init(SpeadHeap *heap) ;
+void spead_heap_wipe(SpeadHeap *heap) ;
+int spead_heap_add_packet(SpeadHeap *heap, SpeadPacket *pkt) ;
+int spead_heap_got_all_packets(SpeadHeap *heap) ;
+int spead_heap_finalize(SpeadHeap *heap) ;
 
 #endif

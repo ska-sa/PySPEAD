@@ -6,7 +6,7 @@
 #include "structmember.h"
 #include "python_api_macros.h"
 #include "py_spead_packet.h"
-#include "py_spead_frame.h"
+#include "py_spead_heap.h"
 #include "py_buffer_socket.h"
 
 #endif
