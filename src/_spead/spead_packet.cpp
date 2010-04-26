@@ -223,7 +223,7 @@ int spead_heap_add_packet(SpeadHeap *heap, SpeadPacket *pkt) {
     }
     if (pkt->heap_len != SPEAD_ERR) heap->heap_len = pkt->heap_len;
     heap->has_all_packets = SPEAD_ERR;
-    return spead_heap_got_all_packets(heap);  // Should this check be automatic like this?
+    return spead_heap_got_all_packets(heap);
 }
 
 int spead_heap_got_all_packets(SpeadHeap *heap) {

@@ -42,6 +42,7 @@ STR_FMT = mkfmt(('c',8))
 
 ITEM = {
     'HEAP_CNT':      {'ID':HEAP_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
+    'HEAP_LEN':      {'ID':HEAP_LEN_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_LEN':    {'ID':PAYLOAD_LEN_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_OFF':    {'ID':PAYLOAD_OFF_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':MAGIC,        'CNT':1},
@@ -369,44 +370,45 @@ def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
     assert(heap.has_key(HEAP_CNT_ID))  # Every heap has to have a HEAP_CNT
     pkt = SpeadPacket()
     descriptors = heap.pop(DESCRIPTOR_ID, [])
-    items, _heap, offset = [], [], 0
+    items, heap_pyld, offset = [], [], 0
     logger.info('itergenpackets: Converting a heap into packets')
     # Add descriptors
     for d in descriptors:
         if DEBUG: logger.debug('itergenpackets: Adding a descriptor to header')
         dlen = len(d)
         items.append((1, DESCRIPTOR_ID, offset))
-        _heap.append(d); offset += dlen
+        heap_pyld.append(d); offset += dlen
     # Add other items
     for id,(is_ext,val) in heap.iteritems():
         vlen = len(val)
         if is_ext:
             if DEBUG: logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
             items.append((1, id, offset))
-            _heap.append(val); offset += vlen
+            heap_pyld.append(val); offset += vlen
         # Pad out to ADDRLEN for bits < ADDRSIZE
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
             items.append((0, id, unpack(DEFAULT_FMT, val)[0][0]))
-    _heap = ''.join(_heap)
-    heaplen, payload_cnt, offset = len(_heap), 0, 0
+    heap_pyld = ''.join(heap_pyld)
+    heap_len, payload_cnt, offset = len(heap_pyld), 0, 0
     while True:
         # The first packet contains all of the header entries for the items that changed
         # Subsequent packets are continuations that increment payload_cnt until all data is sent
         # XXX Need to check that # of changed items fits in MAX_PACKET_LEN.
         if payload_cnt == 0: h = items
         else: h = [(0, HEAP_CNT_ID, unpack(DEFAULT_FMT, heap[HEAP_CNT_ID][1])[0][0])]
-        hlen = ITEMLEN * (len(h) + 3) # 3 for the spead hdr, payload_len and payload_off
-        payload_len = min(MAX_PACKET_LEN - hlen, heaplen - offset)
+        hlen = ITEMLEN * (len(h) + 4) # 4 for the spead hdr, heap_len, payload_len and payload_off
+        payload_len = min(MAX_PACKET_LEN - hlen, heap_len - offset)
+        h.append((0, HEAP_LEN_ID, heap_len))
         h.append((0, PAYLOAD_LEN_ID, payload_len))
         h.append((0, PAYLOAD_OFF_ID, offset))
         pkt.items = h
-        pkt.payload = _heap[offset:offset+payload_len]
+        pkt.payload = heap_pyld[offset:offset+payload_len]
         if DEBUG: logger.debug('itergenpackets: Made packet with hlen=%d, payoff=%d, paylen=%d' \
             % (len(h), offset, payload_len))
         yield pkt.pack()
         offset += payload_len ; payload_cnt += 1
-        if offset >= heaplen: break
+        if offset >= heap_len: break
     logger.info('itergenpackets: Done converting a heap into packets')
     return
 
@@ -535,19 +537,23 @@ def iterheaps(tport):
     heap from the _PAYLOAD of each packet, ordered by PAYLOAD_CNT.  Finally, resolve all IDs with
     extension clauses, replacing them with binary strings from the heap.'''
     heap = SpeadHeap()
+    logger.info('iterheaps: Getting packets')
     for pkt in tport.iterpackets():
         logger.info('iterheaps: Packet with HEAP_CNT=%d' % (pkt.heap_cnt))
         if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterheaps:'))
         # Check if we have finished a heap
-        try: heap.add_packet(pkt)
-        except(ValueError):
+        try:
+            heapdone = heap.add_packet(pkt) # If heap_len is set, we can know heap is done before next heap starts
+            pkt = None # If no error was raised, we're done with this packet
+        except(ValueError): heapdone = True
+        if heapdone:
             logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
             heap.finalize()
             logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
             if heap.is_valid: yield heap
             logger.info('iterheaps: Starting new heap')
             heap = SpeadHeap()
-            heap.add_packet(pkt)
+            if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap
     logger.info('iterheaps: Last packet in stream received, processing final heap.')
     logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
     heap.finalize()

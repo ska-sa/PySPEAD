@@ -343,15 +343,16 @@ static int SpeadHeapObj_init(SpeadHeapObj *self) {
 // Add a packet to the heap
 PyObject *SpeadHeapObj_add_packet(SpeadHeapObj *self, PyObject *args) {
     SpeadPktObj *pkto;
+    int rv;
     if (!PyArg_ParseTuple(args, "O!", &SpeadPktType, &pkto)) return NULL;
-    if (spead_heap_add_packet(&self->heap, pkto->pkt) == SPEAD_ERR) {
+    rv = spead_heap_add_packet(&self->heap, pkto->pkt);
+    if (rv == SPEAD_ERR) {
         PyErr_Format(PyExc_ValueError, "SpeadPacket not part of heap, or it is incorrectly initialized");
         return NULL;
     }
     // Hold pkto in list of safekeeping (keep it from being GC'd)
     PyList_Append(self->list_of_pypkts, (PyObject *) pkto);
-    Py_INCREF(Py_None);
-    return Py_None;
+    return Py_BuildValue("i", rv);
 }
 
 // Add a packet to the heap
@@ -429,6 +430,8 @@ static PyMethodDef SpeadHeapObj_methods[] = {
 static PyMemberDef SpeadHeapObj_members[] = {
     {"heap_cnt", T_LONG, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, heap_cnt), 0, "heap_cnt"},
+    {"heap_len", T_LONG, offsetof(SpeadHeapObj, heap) +
+        offsetof(SpeadHeap, heap_len), 0, "heap_len"},
     {"is_valid", T_INT, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, is_valid), 0, "is_valid"},
     {NULL}  /* Sentinel */
@@ -919,6 +922,7 @@ PyMODINIT_FUNC init_spead(void) {
     PyModule_AddIntConstant(m, "MAX_PACKET_LEN", SPEAD_MAX_PACKET_LEN);
     PyModule_AddIntConstant(m, "MAX_FMT_LEN", SPEAD_MAX_FMT_LEN);
     PyModule_AddIntConstant(m, "HEAP_CNT_ID", SPEAD_HEAP_CNT_ID);
+    PyModule_AddIntConstant(m, "HEAP_LEN_ID", SPEAD_HEAP_LEN_ID);
     PyModule_AddIntConstant(m, "PAYLOAD_OFF_ID", SPEAD_PAYLOAD_OFF_ID);
     PyModule_AddIntConstant(m, "PAYLOAD_LEN_ID", SPEAD_PAYLOAD_LEN_ID);
     PyModule_AddIntConstant(m, "DESCRIPTOR_ID", SPEAD_DESCRIPTOR_ID);

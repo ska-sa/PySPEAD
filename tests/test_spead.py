@@ -78,8 +78,8 @@ class TestMethods(unittest.TestCase):
         self.assertEqual(len(pkts), 1)
         pkt = pkts[0]
         self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-            [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 4])
-        for i in range(1,4):
+            [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 5])
+        for i in range(1,5):
             rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
             is_ext, id = rv[:2]
             raw_val = ''.join(rv[2:])
@@ -89,6 +89,9 @@ class TestMethods(unittest.TestCase):
             elif id == S.HEAP_CNT_ID:
                 self.assertEqual(is_ext, 0)
                 self.assertEqual(raw_val, S.ADDRNULL)
+            elif id == S.HEAP_LEN_ID:
+                self.assertEqual(is_ext, 0)
+                self.assertEqual(raw_val, '\x00\x00\x00\x00\x08')
             elif id == S.PAYLOAD_LEN_ID:
                 self.assertEqual(is_ext, 0)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 8)
@@ -96,7 +99,7 @@ class TestMethods(unittest.TestCase):
                 self.assertEqual(is_ext, 0)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
             else: self.assertTrue(False)
-        self.assertEqual(pkt[40:], 'abcdefgh')
+        self.assertEqual(pkt[48:], 'abcdefgh')
 
         heap[0x1234] = (1, 'abcdefgh' * 4000)
         pkts = [p for p in S.iter_genpackets(heap)]
@@ -105,7 +108,7 @@ class TestMethods(unittest.TestCase):
         for cnt, pkt in enumerate(pkts):
             if cnt == 0:
                 self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-                    [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 4])
+                    [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 5])
                 for i in range(1,5):
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
                     is_ext, id = rv[:2]
@@ -116,17 +119,20 @@ class TestMethods(unittest.TestCase):
                     elif id == S.HEAP_CNT_ID:
                         self.assertEqual(is_ext, 0)
                         self.assertEqual(raw_val, S.ADDRNULL)
+                    elif id == S.HEAP_LEN_ID:
+                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(raw_val, '\x00\x00\x00\x7d\x00')
                     elif id == S.PAYLOAD_LEN_ID:
                         self.assertEqual(is_ext, 0)
-                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*5)
+                        self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*6)
                     elif id == S.PAYLOAD_OFF_ID:
                         self.assertEqual(is_ext, 0)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
                     else: self.assertTrue(False)
-                payloads.append(pkt[5*S.ITEMLEN:])
+                payloads.append(pkt[6*S.ITEMLEN:])
             else:
                 self.assertEqual(list(S.unpack(S.HDR_FMT, pkt[:8])[0]), 
-                    [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 3])
+                    [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 4])
                 for i in range(1,4):
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
                     is_ext, id = rv[:2]
@@ -134,14 +140,17 @@ class TestMethods(unittest.TestCase):
                     if id == S.HEAP_CNT_ID:
                         self.assertEqual(is_ext, 0)
                         self.assertEqual(raw_val, S.ADDRNULL)
+                    elif id == S.HEAP_LEN_ID:
+                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(raw_val, '\x00\x00\x00\x7d\x00')
                     elif id == S.PAYLOAD_LEN_ID:
                         self.assertEqual(is_ext, 0)
-                        if cnt < 3: self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*4)
+                        if cnt < 3: self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*5)
                     elif id == S.PAYLOAD_OFF_ID:
                         self.assertEqual(is_ext, 0)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], (S.MAX_PACKET_LEN-S.ITEMLEN*5)+(cnt-1)*(S.MAX_PACKET_LEN-S.ITEMLEN*4))
                     else: self.assertTrue(False)
-                payloads.append(pkt[4*S.ITEMLEN:])
+                payloads.append(pkt[5*S.ITEMLEN:])
         heap = ''.join(payloads)
         self.assertEqual(len(heap), len('abcdefgh' * 4000))
         self.assertEqual(heap, 'abcdefgh'*4000)
@@ -381,19 +390,28 @@ class Testiterheaps(unittest.TestCase):
         tx = S.Transmitter(S.TransportFile(self.filename,'w'))
         heap = ig.get_heap()
         tx.send_heap(heap)
+        ig['var2'] = 3
+        heap = ig.get_heap()
+        tx.send_heap(heap)
         tx.end()
-        self.rx_tport = S.TransportFile(self.filename,'r')
     def tearDown(self):
         try: os.remove(self.filename)
         except(OSError): pass
     def test_iterheaps(self):
-        heaps = [f for f in S.iterheaps(self.rx_tport)]
-        self.assertEqual(len(heaps), 1)
+        rx_tport = S.TransportFile(self.filename,'r')
+        heaps = [f for f in S.iterheaps(rx_tport)]
+        self.assertEqual(len(heaps), 2)
         heap = heaps[0]
         ig = S.ItemGroup()
         ig.update(heap)
         self.assertEqual(ig['var1'], 1)
         self.assertEqual(ig['var2'], 2)
+    def test_heaplen(self):
+        data = open(self.filename).read()
+        rx_tport = S.TransportString(data)
+        for h in S.iterheaps(rx_tport):
+            self.assertFalse(rx_tport.got_term_sig)
+        self.assertTrue(rx_tport.got_term_sig)
     
 if __name__ == '__main__':
     unittest.main()
