@@ -19,15 +19,13 @@ logger = logging.getLogger('spead')
 # | |__| (_) | | | \__ \ || (_| | | | | |_\__ \
 #  \____\___/|_| |_|___/\__\__,_|_| |_|\__|___/
 
-MAX_PACKET_SIZE = 9200
-MAX_PAYLOADS_IN_FRAME = 4096
 UNRESERVED_OPTION = 2**12
-NAME_ID = 0x06
-DESCRIPTION_ID = 0x07
-SHAPE_ID = 0x08
-FORMAT_ID = 0x09
-ID_ID = 0x0A
-IVAL_NULL = '\x00'*IVAL_BYTES
+NAME_ID = 0x10
+DESCRIPTION_ID = 0x11
+SHAPE_ID = 0x12
+FORMAT_ID = 0x13
+ID_ID = 0x14
+ADDRNULL = '\x00'*ADDRLEN
 DEBUG = False
 
 #def pack(fmt, *args): return _spead.pack(fmt, args)
@@ -35,7 +33,7 @@ DEBUG = False
 FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'
 def mkfmt(*args): return pack(FORMAT_FMT, args)
 DEFAULT_FMT = mkfmt(('u',40))
-HDR_FMT = mkfmt(('u',24),('u',8),('u',32))
+HDR_FMT = mkfmt(('u',8),('u',8),('u',8),('u',8),('u',16),('u',16))
 RAW_ITEM_FMT = mkfmt(('u',1),('u',23),('c',8),('c',8),('c',8),('c',8),('c',8))
 ITEM_FMT = mkfmt(('u',1),('u',23),('u',40))
 ID_FMT = mkfmt(('u',16),('u',24))
@@ -43,9 +41,9 @@ SHAPE_FMT = mkfmt(('u',8),('u',56))
 STR_FMT = mkfmt(('c',8))
 
 ITEM = {
-    'FRAME_CNT':      {'ID':FRAME_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
-    'PAYLOAD_LEN':    {'ID':PAYLOAD_LENGTH_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
-    'PAYLOAD_OFF':    {'ID':PAYLOAD_OFFSET_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
+    'HEAP_CNT':      {'ID':HEAP_CNT_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
+    'PAYLOAD_LEN':    {'ID':PAYLOAD_LEN_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
+    'PAYLOAD_OFF':    {'ID':PAYLOAD_OFF_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':MAGIC,        'CNT':1},
     'STREAM_CTRL':    {'ID':STREAM_CTRL_ID,    'FMT':DEFAULT_FMT,        'CNT':1},
     'NAME':           {'ID':NAME_ID,           'FMT':STR_FMT,            'CNT':-1},
@@ -89,11 +87,11 @@ def readable_header(h, prepend=''):
 
 def readable_binpacket(pkt, prepend='', show_payload=False):
     o, rv = 0, ['', 'vvv PACKET ' + 'v'*(50-len(prepend))]
-    magic, version, n_options = unpack(HDR_FMT, pkt[o:o+ITEM_BYTES])[0] ; o += ITEM_BYTES
+    magic, version, itemsize, addrsize, junk, n_options = unpack(HDR_FMT, pkt[o:o+ITEMLEN])[0] ; o += ITEMLEN
     rv.append(' HEADER:[ SPEAD-CODE=%06x | VERSION=%d | N_OPTIONS=%d ]' % (magic, version, n_options))
     for cnt in range(n_options):
-        rv.append(readable_header(pkt[o:o+ITEM_BYTES], prepend='ITEM%02d:' % (cnt)))
-        o += ITEM_BYTES
+        rv.append(readable_header(pkt[o:o+ITEMLEN], prepend='ITEM%02d:' % (cnt)))
+        o += ITEMLEN
     rv.append('PAYLOAD: BYTES=%d' % (len(pkt[o:])))
     if show_payload: rv.append('PAYLOAD: ' + readable_payload(pkt[o:]))
     rv.append('^'*(60-len(prepend)))
@@ -101,7 +99,7 @@ def readable_binpacket(pkt, prepend='', show_payload=False):
 
 def readable_speadpacket(pkt, prepend='', show_payload=False):
     o, rv = 0, ['', 'vvv PACKET ' + 'v'*(50-len(prepend))]
-    rv.append('FRAME_CNT=%d' % (pkt.frame_cnt))
+    rv.append('HEAP_CNT=%d' % (pkt.heap_cnt))
     for cnt,(is_ext,id,val) in enumerate(pkt.items):
         if is_ext: val = 'OFF=%s' % (hex(val)[2:])
         else: val = 'VAL=%s' % (hex(val)[2:])
@@ -111,17 +109,17 @@ def readable_speadpacket(pkt, prepend='', show_payload=False):
     rv.append('^'*(60-len(prepend)))
     return '\n'.join([prepend+r for r in rv])
 
-def readable_frame(frame, prepend=''):
-    rv = ['', 'vvv FRAME ' + 'v'*(50-len(prepend))]
-    for id in frame:
+def readable_heap(heap, prepend=''):
+    rv = ['', 'vvv HEAP ' + 'v'*(50-len(prepend))]
+    for id in heap:
         try:
             name = NAME[id]
             if name == 'DESCRIPTOR':
-                for cnt, d in enumerate(frame[id]):
+                for cnt, d in enumerate(heap[id]):
                     rv += readable_binpacket(d, prepend='DESCRIPTOR%d:' % (cnt)).split('\n')
             else:
                 fmt, cnt = ITEM[name]['FMT'], ITEM[name]['CNT']
-                val = unpack(fmt, frame[id][1], cnt=cnt)
+                val = unpack(fmt, heap[id][1], cnt=cnt)
                 try:
                     while type(val) != str and len(val) == 1: val = val[0]
                 except(TypeError): pass
@@ -129,7 +127,7 @@ def readable_frame(frame, prepend=''):
                 if len(s) > (70 - len(prepend)): s = s[:(70-len(prepend)-3)]+'...'
                 rv.append(s)
         except(KeyError):
-            val = bitstring.BitString(bytes=frame[id][1])
+            val = bitstring.BitString(bytes=heap[id][1])
             s = '%16d: %s' % (id, val.hex)
             if len(s) > (70 - len(prepend)): s = s[:(70-len(prepend)-3)]+'...'
             rv.append(s)
@@ -165,8 +163,8 @@ class Descriptor:
             try: self.size = reduce(lambda x,y: x*y, self.shape)
             except(TypeError): self.size = 1
         self.nbits = calcsize(self.format) * self.size
-        # If nbits is smaller than IVAL_BITS, generate offset needed for reading IVAL_BITS
-        if self.nbits > 0 and self.nbits < IVAL_BITS: self._offset = IVAL_BITS - self.nbits
+        # If nbits is smaller than ADDRSIZE, generate offset needed for reading ADDRSIZE
+        if self.nbits > 0 and self.nbits < ADDRSIZE: self._offset = ADDRSIZE - self.nbits
         else: self._offset = 0
     def pack(self, val):
         '''Convert a series of values into a binary string according to the format of this Descriptor.
@@ -199,19 +197,19 @@ class Descriptor:
         '''Create a string representation that encodes the attributes of this descriptor.'''
         if self.size == -1: shape = pack(SHAPE_FMT, ((2, 0),))
         else: shape = pack(SHAPE_FMT, [(0, s) for s in self.shape])
-        frame = {
+        heap = {
             ID_ID: (0, pack(ID_FMT, ((0, self.id),))),
             SHAPE_ID: (1, shape),
             FORMAT_ID: (1, self.format),
             NAME_ID: (1, self.name),
             DESCRIPTION_ID: (1, self.description),
-            FRAME_CNT_ID: (0, IVAL_NULL),
+            HEAP_CNT_ID: (0, ADDRNULL),
         }
-        return ''.join([p for p in iter_genpackets(frame)])
+        return ''.join([p for p in iter_genpackets(heap)])
     def from_descriptor_string(self, s):
         '''Set the attributes of this descriptor from a string generated by to_descriptor_string().'''
-        for frame in iterframes(TransportString(s)):
-            items = frame.get_items()
+        for heap in iterheaps(TransportString(s)):
+            items = heap.get_items()
             self.id = unpack(ID_FMT, items[ID_ID])[0][-1]
             shape = unpack(SHAPE_FMT, items[SHAPE_ID], cnt=-1)
             # Check if we have a dynamically sized value
@@ -277,14 +275,14 @@ class Item(Descriptor):
 
 class ItemGroup:
     '''An ItemGroup is a collection of Items whose collective state may be synchronized to another
-    instance of an ItemGroup via frames that are encoded as SPEAD packets.'''
+    instance of an ItemGroup via heaps that are encoded as SPEAD packets.'''
     def __init__(self):
-        self.frame_cnt = 1  # We start frame_cnt at 1 b/c control packets have frame_cnt = 0
+        self.heap_cnt = 1  # We start heap_cnt at 1 b/c control packets have heap_cnt = 0
         self._items = {}
         self._names = {}
         self._new_names = []
     def add_item(self, *args, **kwargs):
-        '''Add an Item to the group.  The state of this Item will be propagated through the frames
+        '''Add an Item to the group.  The state of this Item will be propagated through the heaps
         of this ItemGroup.  Arguments to this function are passed directly to the Item constructor.'''
         item = Item(*args, **kwargs)
         if item.id is None:
@@ -313,40 +311,40 @@ class ItemGroup:
     def __setitem__(self, name, val):
         '''ItemGroup[name] = val sets the value of the Item with the provided name.'''
         return self.get_item(name).set_value(val)
-    def get_frame(self, frame=None):
-        '''Return the frame that must be transmitted to propagate the change in the state of 
-        this ItemGroup since the last time this function was called.  An existing frame
+    def get_heap(self, heap=None):
+        '''Return the heap that must be transmitted to propagate the change in the state of 
+        this ItemGroup since the last time this function was called.  An existing heap
         (a dictionary) can be provided as a starting point, if desired.'''
-        # Inject an automatically generated frame count
-        logger.info('ITEMGROUP.get_frame: Building frame with FRAME_CNT=%d' % self.frame_cnt)
-        if frame is None: frame = {}
-        frame[FRAME_CNT_ID] = (0, pack(DEFAULT_FMT, ((self.frame_cnt,),)))
-        self.frame_cnt += 1
+        # Inject an automatically generated heap count
+        logger.info('ITEMGROUP.get_heap: Building heap with HEAP_CNT=%d' % self.heap_cnt)
+        if heap is None: heap = {}
+        heap[HEAP_CNT_ID] = (0, pack(DEFAULT_FMT, ((self.heap_cnt,),)))
+        self.heap_cnt += 1
         # Process descriptors for any items that have been added. Since there can 
         # be multiple ITEM_DESCRIPTORs, it will be a list that is specially handled.
-        frame[DESCRIPTOR_ID] = []
+        heap[DESCRIPTOR_ID] = []
         while len(self._new_names) > 0:
             id = self._names[self._new_names.pop()]
             item = self._items[id]
-            if DEBUG: logger.debug('ITEMGROUP.get_frame: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
-            frame[DESCRIPTOR_ID].append(item.to_descriptor_string())
+            if DEBUG: logger.debug('ITEMGROUP.get_heap: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
+            heap[DESCRIPTOR_ID].append(item.to_descriptor_string())
         # Add entries for any items that have changed
         for item in self._items.itervalues():
             if not item.has_changed(): continue
             val = item.to_value_string()
-            is_ext = len(val) > IVAL_BYTES or item.size < 0
-            if DEBUG: logger.debug('ITEMGROUP.get_frame: Adding entry for id=%d (name=%s)' % (item.id, item.name))
-            frame[item.id] = (is_ext, val)
+            is_ext = len(val) > ADDRLEN or item.size < 0
+            if DEBUG: logger.debug('ITEMGROUP.get_heap: Adding entry for id=%d (name=%s)' % (item.id, item.name))
+            heap[item.id] = (is_ext, val)
             # Once data is gathered from changed item, mark it as unchanged
             item.unset_changed()
-        logger.info('ITEMGROUP.get_frame: Done building frame with FRAME_CNT=%d' % (self.frame_cnt - 1))
-        return frame
-    def update(self, frame):
-        '''Update the state of this ItemGroup using the frame generated by ItemGroup.get_frame().'''
-        self.frame_cnt = frame.frame_cnt
-        logger.info('ITEMGROUP.update: Updating values from frame with FRAME_CNT=%d' % (self.frame_cnt))
+        logger.info('ITEMGROUP.get_heap: Done building heap with HEAP_CNT=%d' % (self.heap_cnt - 1))
+        return heap
+    def update(self, heap):
+        '''Update the state of this ItemGroup using the heap generated by ItemGroup.get_heap().'''
+        self.heap_cnt = heap.heap_cnt
+        logger.info('ITEMGROUP.update: Updating values from heap with HEAP_CNT=%d' % (self.heap_cnt))
         # Handle any new DESCRIPTORs first
-        items = frame.get_items()
+        items = heap.get_items()
         for d in items[DESCRIPTOR_ID]:
             if DEBUG: 
                 logger.debug('ITEMGROUP.update: Processing descriptor')
@@ -364,52 +362,52 @@ class ItemGroup:
 #  ___) |  __/| |___ / ___ \| |_| | |  _ <  /  \_____| |  /  \ 
 # |____/|_|   |_____/_/   \_\____/  |_| \_\/_/\_\    |_| /_/\_\
 
-def iter_genpackets(frame, max_pkt_size=MAX_PACKET_SIZE):
-    '''Provided a frame (dictionary of IDs and binary string values),
+def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
+    '''Provided a heap (dictionary of IDs and binary string values),
     iterate over the set of binary SPEAD packets that propagate this data
     to a receiver.  The stream will be broken into packets of the specified maximum size.'''
-    assert(frame.has_key(FRAME_CNT_ID))  # Every frame has to have a FRAME_CNT
+    assert(heap.has_key(HEAP_CNT_ID))  # Every heap has to have a HEAP_CNT
     pkt = SpeadPacket()
-    descriptors = frame.pop(DESCRIPTOR_ID, [])
-    items, heap, offset = [], [], 0
-    logger.info('itergenpackets: Converting a frame into packets')
+    descriptors = heap.pop(DESCRIPTOR_ID, [])
+    items, _heap, offset = [], [], 0
+    logger.info('itergenpackets: Converting a heap into packets')
     # Add descriptors
     for d in descriptors:
         if DEBUG: logger.debug('itergenpackets: Adding a descriptor to header')
         dlen = len(d)
         items.append((1, DESCRIPTOR_ID, offset))
-        heap.append(d); offset += dlen
+        _heap.append(d); offset += dlen
     # Add other items
-    for id,(is_ext,val) in frame.iteritems():
+    for id,(is_ext,val) in heap.iteritems():
         vlen = len(val)
         if is_ext:
             if DEBUG: logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
             items.append((1, id, offset))
-            heap.append(val); offset += vlen
-        # Pad out to IVAL_BYTES for bits < IVAL_BITS
+            _heap.append(val); offset += vlen
+        # Pad out to ADDRLEN for bits < ADDRSIZE
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
             items.append((0, id, unpack(DEFAULT_FMT, val)[0][0]))
-    heap = ''.join(heap)
-    heaplen, payload_cnt, offset = len(heap), 0, 0
+    _heap = ''.join(_heap)
+    heaplen, payload_cnt, offset = len(_heap), 0, 0
     while True:
         # The first packet contains all of the header entries for the items that changed
         # Subsequent packets are continuations that increment payload_cnt until all data is sent
-        # XXX Need to check that # of changed items fits in MAX_PACKET_SIZE.
+        # XXX Need to check that # of changed items fits in MAX_PACKET_LEN.
         if payload_cnt == 0: h = items
-        else: h = [(0, FRAME_CNT_ID, unpack(DEFAULT_FMT, frame[FRAME_CNT_ID][1])[0][0])]
-        hlen = ITEM_BYTES * (len(h) + 3) # 3 for the spead hdr, payload_len and payload_off
-        payload_len = min(MAX_PACKET_SIZE - hlen, heaplen - offset)
-        h.append((0, PAYLOAD_LENGTH_ID, payload_len))
-        h.append((0, PAYLOAD_OFFSET_ID, offset))
+        else: h = [(0, HEAP_CNT_ID, unpack(DEFAULT_FMT, heap[HEAP_CNT_ID][1])[0][0])]
+        hlen = ITEMLEN * (len(h) + 3) # 3 for the spead hdr, payload_len and payload_off
+        payload_len = min(MAX_PACKET_LEN - hlen, heaplen - offset)
+        h.append((0, PAYLOAD_LEN_ID, payload_len))
+        h.append((0, PAYLOAD_OFF_ID, offset))
         pkt.items = h
-        pkt.payload = heap[offset:offset+payload_len]
+        pkt.payload = _heap[offset:offset+payload_len]
         if DEBUG: logger.debug('itergenpackets: Made packet with hlen=%d, payoff=%d, paylen=%d' \
             % (len(h), offset, payload_len))
         yield pkt.pack()
         offset += payload_len ; payload_cnt += 1
         if offset >= heaplen: break
-    logger.info('itergenpackets: Done converting a frame into packets')
+    logger.info('itergenpackets: Done converting a heap into packets')
     return
 
 #  _____                                     _   
@@ -438,7 +436,7 @@ class TransportString:
                 if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Yielding packet, offset=%d/%d' % (self.offset, len(self.data)))
                 yield pkt
             except(ValueError):
-                if self.offset >= len(self.data) - ITEM_BYTES:
+                if self.offset >= len(self.data) - ITEMLEN:
                     if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Reached end of string')
                     break
                 elif self.allow_junk:
@@ -459,12 +457,12 @@ class TransportFile(file):
         else: file.__init__(self, *args, **kwargs)
     def iterpackets(self):
         if self._file: self = self._file
-        ts = TransportString(self.read(MAX_PACKET_SIZE))
+        ts = TransportString(self.read(MAX_PACKET_LEN))
         while True:
             for pkt in ts.iterpackets(): yield pkt
             if not ts.got_term_sig:
                 if DEBUG: logger.debug('TRANSPORTFILE.iterpackets: Reading more data')
-                s = self.read(MAX_PACKET_SIZE)
+                s = self.read(MAX_PACKET_LEN)
                 if len(s) == 0:
                     if DEBUG: logger.debug('TRANSPORTFILE.iterpackets: End of file')
                     break
@@ -504,24 +502,24 @@ class TransportUDPrx(BufferSocket):
 #   |_||_|  \__,_|_| |_|___/_| |_| |_|_|\__|\__\___|_|   
 
 class Transmitter:
-    '''A Transmitter converts a frame into a series of packets that are fed to Transport.write().'''
+    '''A Transmitter converts a heap into a series of packets that are fed to Transport.write().'''
     def __init__(self, transport):
         self.t = transport
-    def send_frame(self, frame, max_pkt_size=MAX_PACKET_SIZE):
-        '''Convert a frame from an ItemGroup into a series of packets (each of the specified
+    def send_heap(self, heap, max_pkt_size=MAX_PACKET_LEN):
+        '''Convert a heap from an ItemGroup into a series of packets (each of the specified
         maximum packet size) and write those packets to this Transmitter's Transport.  If not
-        all ids in a frame are to be sent, ids_to_send should contain the ones to be transmitted.'''
-        if DEBUG: logger.debug(readable_frame(frame, prepend='TX.send_frame:'))
-        for cnt, p in enumerate(iter_genpackets(frame, max_pkt_size=max_pkt_size)):
-            logger.info('TX.send_frame: Sending frame packet %d' % (cnt))
-            if DEBUG: logger.debug(readable_binpacket(p, prepend='TX.send_frame,pkt=%d:' % (cnt)))
+        all ids in a heap are to be sent, ids_to_send should contain the ones to be transmitted.'''
+        if DEBUG: logger.debug(readable_heap(heap, prepend='TX.send_heap:'))
+        for cnt, p in enumerate(iter_genpackets(heap, max_pkt_size=max_pkt_size)):
+            logger.info('TX.send_heap: Sending heap packet %d' % (cnt))
+            if DEBUG: logger.debug(readable_binpacket(p, prepend='TX.send_heap,pkt=%d:' % (cnt)))
             self.t.write(p)
     def end(self):
         '''Send a packet signalling the end of this stream.'''
-        frame = { FRAME_CNT_ID: (0, '\xff\xff\xff\xff\xff\xff'),
+        heap = { HEAP_CNT_ID: (0, '\xff\xff\xff\xff\xff\xff'),
             STREAM_CTRL_ID: (0, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
         logger.info('TX.end: Sending stream terminator')
-        self.send_frame(frame)
+        self.send_heap(heap)
         del(self.t) # Prevents any further activity
             
 #  ____               _                
@@ -530,31 +528,31 @@ class Transmitter:
 # |  _ <  __/ (_|  __/ |\ V /  __/ |   
 # |_| \_\___|\___\___|_| \_/ \___|_|   
 
-def iterframes(tport, max_payloads_in_frame=MAX_PAYLOADS_IN_FRAME):
-    '''Iterate over all valid frames received through the Transport tport.iterframes(), assembling frames 
-    from contiguous packets from iterpackets() that have the same FRAME_CNT.  Set frame's ID/values 
-    from constituent packets, with packets having higher PAYLOAD_CNTs taking precedence.  Assemble frame's
+def iterheaps(tport):
+    '''Iterate over all valid heaps received through the Transport tport.iterheaps(), assembling heaps 
+    from contiguous packets from iterpackets() that have the same HEAP_CNT.  Set heap's ID/values 
+    from constituent packets, with packets having higher PAYLOAD_CNTs taking precedence.  Assemble heap's
     heap from the _PAYLOAD of each packet, ordered by PAYLOAD_CNT.  Finally, resolve all IDs with
     extension clauses, replacing them with binary strings from the heap.'''
-    frame = SpeadFrame()
+    heap = SpeadHeap()
     for pkt in tport.iterpackets():
-        logger.info('iterframes: Packet with FRAME_CNT=%d' % (pkt.frame_cnt))
-        if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterframes:'))
-        # Check if we have finished a frame
-        try: frame.add_packet(pkt)
+        logger.info('iterheaps: Packet with HEAP_CNT=%d' % (pkt.heap_cnt))
+        if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterheaps:'))
+        # Check if we have finished a heap
+        try: heap.add_packet(pkt)
         except(ValueError):
-            logger.info('iterframes: Frame %d completed, attempting to unpack heap' % frame.frame_cnt)
-            frame.finalize()
-            logger.info('iterframes: SpeadFrame.is_valid=%d' % frame.is_valid)
-            if frame.is_valid: yield frame
-            logger.info('iterframes: Starting new frame')
-            frame = SpeadFrame()
-            frame.add_packet(pkt)
-    logger.info('iterframes: Last packet in stream received, processing final frame.')
-    logger.info('iterframes: Frame %d completed, attempting to unpack heap' % frame.frame_cnt)
-    frame.finalize()
-    logger.info('iterframes: SpeadFrame.is_valid=%d' % frame.is_valid)
-    if frame.is_valid: yield frame
-    logger.info('iterframes: Finished all frames')
+            logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
+            heap.finalize()
+            logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
+            if heap.is_valid: yield heap
+            logger.info('iterheaps: Starting new heap')
+            heap = SpeadHeap()
+            heap.add_packet(pkt)
+    logger.info('iterheaps: Last packet in stream received, processing final heap.')
+    logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
+    heap.finalize()
+    logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
+    if heap.is_valid: yield heap
+    logger.info('iterheaps: Finished all heaps')
     return
 

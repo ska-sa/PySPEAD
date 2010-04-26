@@ -279,7 +279,7 @@ int spead_heap_finalize(SpeadHeap *heap) {
             item->is_valid = 1;
             item->id = id;
             // Direct-address items must be retrieved from the packet payloads
-            if (!SPEAD_ITEM_MODE(itemptr1)) {
+            if (SPEAD_ITEM_MODE(itemptr1)) {
                 off = (int64_t) SPEAD_ITEM_ADDR(itemptr1);
                 // Figure out len of item by defaulting to remaining heap, then looping over 
                 // remaining itemptrs (in all remaining of packets) to find start of next
