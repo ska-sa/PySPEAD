@@ -1,10 +1,10 @@
 '''
 Data packet:
-[ SPEAD #    (24b)     | Ver  (8b) |           # Items (32b) ]
-[ Ext (1b) | ID1 (23b) |           Value (40b)               ]
-[ Ext (1b) | ID1 (23b) |      Ext  Offset(40b)               ]
+[ SPEAD #    (8b) | Ver  (8b) | ItemSize (8b) | AddrSize (8b) | Reserved (16b) | # Items (16b) ]
+[ MODE (1b) |         ID1 (23b)               |              Offset(40b)                       ]
+[ MODE (1b) |         ID1 (23b)               |              Value (40b)                       ]
 ...
-[ Payload (heap) .............................................
+[ Packet Payload .............................................
 .............................................................]
 '''
 import socket, math, numpy, logging, sys
@@ -30,13 +30,13 @@ DEBUG = False
 
 #def pack(fmt, *args): return _spead.pack(fmt, args)
 
-FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'
+FORMAT_FMT = 'c\x00\x00\x08u\x00\x00\x18'  # This must be explicit to bootstrap packing formats
 def mkfmt(*args): return pack(FORMAT_FMT, args)
-DEFAULT_FMT = mkfmt(('u',40))
+DEFAULT_FMT = mkfmt(('u',ADDRSIZE))
 HDR_FMT = mkfmt(('u',8),('u',8),('u',8),('u',8),('u',16),('u',16))
-RAW_ITEM_FMT = mkfmt(('u',1),('u',23),('c',8),('c',8),('c',8),('c',8),('c',8))
-ITEM_FMT = mkfmt(('u',1),('u',23),('u',40))
-ID_FMT = mkfmt(('u',16),('u',24))
+RAW_ITEM_FMT = mkfmt(('u',1),('u',ITEMSIZE-ADDRSIZE-1),('c',8),('c',8),('c',8),('c',8),('c',8))
+ITEM_FMT = mkfmt(('u',1),('u',ITEMSIZE-ADDRSIZE-1),('u',ADDRSIZE))
+ID_FMT = mkfmt(('u',ADDRSIZE-(ITEMSIZE-ADDRSIZE)),('u',ITEMSIZE-ADDRSIZE))
 SHAPE_FMT = mkfmt(('u',8),('u',56))
 STR_FMT = mkfmt(('c',8))
 
@@ -78,13 +78,13 @@ def readable_payload(payload, prepend=''):
 
 def readable_header(h, prepend=''):
     rv = unpack(RAW_ITEM_FMT, h)[0]
-    is_ext, id = rv[:2]
+    mode, id = rv[:2]
     raw_val = ''.join(rv[2:])
     bs = bitstring.BitString(bytes=raw_val)
-    if is_ext: val = 'OFF=%s' % (bs.hex[2:])
+    if mode == DIRECTADDR: val = 'OFF=%s' % (bs.hex[2:])
     else: val = 'VAL=%s' % (bs.hex[2:])
-    try: return prepend+'[ IS_EXT=%d | NAME=%16s | %s ]' % (is_ext, NAME[id], val)
-    except(KeyError): return prepend+'[ IS_EXT=%d |   ID=%16x | %s ]' % (is_ext, id, val)
+    try: return prepend+'[ MODE=%d | NAME=%16s | %s ]' % (mode, NAME[id], val)
+    except(KeyError): return prepend+'[ MODE=%d |   ID=%16x | %s ]' % (mode, id, val)
 
 def readable_binpacket(pkt, prepend='', show_payload=False):
     o, rv = 0, ['', 'vvv PACKET ' + 'v'*(50-len(prepend))]
@@ -101,11 +101,11 @@ def readable_binpacket(pkt, prepend='', show_payload=False):
 def readable_speadpacket(pkt, prepend='', show_payload=False):
     o, rv = 0, ['', 'vvv PACKET ' + 'v'*(50-len(prepend))]
     rv.append('HEAP_CNT=%d' % (pkt.heap_cnt))
-    for cnt,(is_ext,id,val) in enumerate(pkt.items):
-        if is_ext: val = 'OFF=%s' % (hex(val)[2:])
+    for cnt,(mode,id,val) in enumerate(pkt.items):
+        if mode == DIRECTADDR: val = 'OFF=%s' % (hex(val)[2:])
         else: val = 'VAL=%s' % (hex(val)[2:])
-        try: rv.append('ITEM%02d: [ IS_EXT=%d | NAME=%16s | %s ]' % (cnt, is_ext, NAME[id], val))
-        except(KeyError): rv.append('ITEM%02d: [ IS_EXT=%d |   ID=%16d | %s ]' % (cnt, is_ext, id, val))
+        try: rv.append('ITEM%02d: [ MODE=%d | NAME=%16s | %s ]' % (cnt, mode, NAME[id], val))
+        except(KeyError): rv.append('ITEM%02d: [ MODE=%d |   ID=%16d | %s ]' % (cnt, mode, id, val))
     if show_payload: rv.append('PAYLOAD: ' + readable_payload(pkt.get_payload()))
     rv.append('^'*(60-len(prepend)))
     return '\n'.join([prepend+r for r in rv])
@@ -199,12 +199,12 @@ class Descriptor:
         if self.size == -1: shape = pack(SHAPE_FMT, ((2, 0),))
         else: shape = pack(SHAPE_FMT, [(0, s) for s in self.shape])
         heap = {
-            ID_ID: (0, pack(ID_FMT, ((0, self.id),))),
-            SHAPE_ID: (1, shape),
-            FORMAT_ID: (1, self.format),
-            NAME_ID: (1, self.name),
-            DESCRIPTION_ID: (1, self.description),
-            HEAP_CNT_ID: (0, ADDRNULL),
+            ID_ID: (IMMEDIATEADDR, pack(ID_FMT, ((0, self.id),))),
+            SHAPE_ID: (DIRECTADDR, shape),
+            FORMAT_ID: (DIRECTADDR, self.format),
+            NAME_ID: (DIRECTADDR, self.name),
+            DESCRIPTION_ID: (DIRECTADDR, self.description),
+            HEAP_CNT_ID: (IMMEDIATEADDR, ADDRNULL),
         }
         return ''.join([p for p in iter_genpackets(heap)])
     def from_descriptor_string(self, s):
@@ -319,7 +319,7 @@ class ItemGroup:
         # Inject an automatically generated heap count
         logger.info('ITEMGROUP.get_heap: Building heap with HEAP_CNT=%d' % self.heap_cnt)
         if heap is None: heap = {}
-        heap[HEAP_CNT_ID] = (0, pack(DEFAULT_FMT, ((self.heap_cnt,),)))
+        heap[HEAP_CNT_ID] = (IMMEDIATEADDR, pack(DEFAULT_FMT, ((self.heap_cnt,),)))
         self.heap_cnt += 1
         # Process descriptors for any items that have been added. Since there can 
         # be multiple ITEM_DESCRIPTORs, it will be a list that is specially handled.
@@ -333,9 +333,10 @@ class ItemGroup:
         for item in self._items.itervalues():
             if not item.has_changed(): continue
             val = item.to_value_string()
-            is_ext = len(val) > ADDRLEN or item.size < 0
+            if len(val) > ADDRLEN or item.size < 0: mode = DIRECTADDR
+            else: mode = IMMEDIATEADDR
             if DEBUG: logger.debug('ITEMGROUP.get_heap: Adding entry for id=%d (name=%s)' % (item.id, item.name))
-            heap[item.id] = (is_ext, val)
+            heap[item.id] = (mode, val)
             # Once data is gathered from changed item, mark it as unchanged
             item.unset_changed()
         logger.info('ITEMGROUP.get_heap: Done building heap with HEAP_CNT=%d' % (self.heap_cnt - 1))
@@ -376,19 +377,19 @@ def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
     for d in descriptors:
         if DEBUG: logger.debug('itergenpackets: Adding a descriptor to header')
         dlen = len(d)
-        items.append((1, DESCRIPTOR_ID, offset))
+        items.append((DIRECTADDR, DESCRIPTOR_ID, offset))
         heap_pyld.append(d); offset += dlen
     # Add other items
-    for id,(is_ext,val) in heap.iteritems():
+    for id,(mode,val) in heap.iteritems():
         vlen = len(val)
-        if is_ext:
+        if mode == DIRECTADDR:
             if DEBUG: logger.debug('itergenpackets: Adding extension item to header, id=%d, len(val)=%d' % (id, len(val)))
-            items.append((1, id, offset))
+            items.append((DIRECTADDR, id, offset))
             heap_pyld.append(val); offset += vlen
         # Pad out to ADDRLEN for bits < ADDRSIZE
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
-            items.append((0, id, unpack(DEFAULT_FMT, val)[0][0]))
+            items.append((IMMEDIATEADDR, id, unpack(DEFAULT_FMT, val)[0][0]))
     heap_pyld = ''.join(heap_pyld)
     heap_len, payload_cnt, offset = len(heap_pyld), 0, 0
     while True:
@@ -396,12 +397,12 @@ def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
         # Subsequent packets are continuations that increment payload_cnt until all data is sent
         # XXX Need to check that # of changed items fits in MAX_PACKET_LEN.
         if payload_cnt == 0: h = items
-        else: h = [(0, HEAP_CNT_ID, unpack(DEFAULT_FMT, heap[HEAP_CNT_ID][1])[0][0])]
+        else: h = [(IMMEDIATEADDR, HEAP_CNT_ID, unpack(DEFAULT_FMT, heap[HEAP_CNT_ID][1])[0][0])]
         hlen = ITEMLEN * (len(h) + 4) # 4 for the spead hdr, heap_len, payload_len and payload_off
         payload_len = min(MAX_PACKET_LEN - hlen, heap_len - offset)
-        h.append((0, HEAP_LEN_ID, heap_len))
-        h.append((0, PAYLOAD_LEN_ID, payload_len))
-        h.append((0, PAYLOAD_OFF_ID, offset))
+        h.append((IMMEDIATEADDR, HEAP_LEN_ID, heap_len))
+        h.append((IMMEDIATEADDR, PAYLOAD_LEN_ID, payload_len))
+        h.append((IMMEDIATEADDR, PAYLOAD_OFF_ID, offset))
         pkt.items = h
         pkt.payload = heap_pyld[offset:offset+payload_len]
         if DEBUG: logger.debug('itergenpackets: Made packet with hlen=%d, payoff=%d, paylen=%d' \
@@ -518,8 +519,8 @@ class Transmitter:
             self.t.write(p)
     def end(self):
         '''Send a packet signalling the end of this stream.'''
-        heap = { HEAP_CNT_ID: (0, '\xff\xff\xff\xff\xff\xff'),
-            STREAM_CTRL_ID: (0, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
+        heap = { HEAP_CNT_ID: (IMMEDIATEADDR, '\xff\xff\xff\xff\xff\xff'),
+            STREAM_CTRL_ID: (IMMEDIATEADDR, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
         logger.info('TX.end: Sending stream terminator')
         self.send_heap(heap)
         del(self.t) # Prevents any further activity

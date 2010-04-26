@@ -4,19 +4,19 @@ import bitstring, struct, sys, os, time, socket
 
 example_pkt = ''.join([
     S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 3),)),
-    S.pack(S.ITEM_FMT, ((0, S.HEAP_CNT_ID, 3),)),
-    S.pack(S.ITEM_FMT, ((1, 0x3333, 0),)),
-    S.pack(S.ITEM_FMT, ((0, S.PAYLOAD_LEN_ID, 8),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.HEAP_CNT_ID, 3),)),
+    S.pack(S.ITEM_FMT, ((S.DIRECTADDR, 0x3333, 0),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.PAYLOAD_LEN_ID, 8),)),
     struct.pack('>d', 3.1415)])
 
 term_pkt = ''.join([
     S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 2),)),
-    S.pack(S.ITEM_FMT, ((0, S.HEAP_CNT_ID, 0),)),
-    S.pack(S.ITEM_FMT, ((0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),)),])
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.HEAP_CNT_ID, 0),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),)),])
 
 example_heap = {
-    S.HEAP_CNT_ID: (0, '\x00\x00\x00\x00\x03'),
-    0x3333: (1, struct.pack('>d', 3.1415)),
+    S.HEAP_CNT_ID: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x03'),
+    0x3333: (S.DIRECTADDR, struct.pack('>d', 3.1415)),
 }
 
 class RawUDPrx:
@@ -31,8 +31,8 @@ class RawUDPrx:
 
 class TestMethods(unittest.TestCase):
     def test_calcsize(self):
-        self.assertEqual(S.calcsize(S.DEFAULT_FMT), 40)
-        self.assertEqual(S.calcsize(S.ITEM_FMT), 64)
+        self.assertEqual(S.calcsize(S.DEFAULT_FMT), S.ADDRSIZE)
+        self.assertEqual(S.calcsize(S.ITEM_FMT), S.ITEMSIZE)
         self.assertEqual(S.calcsize(S.FORMAT_FMT), 32)
     def test_pack(self):
         self.assertEqual(S.pack(S.DEFAULT_FMT, ((2**32+2**8,),)), 
@@ -73,7 +73,7 @@ class TestMethods(unittest.TestCase):
         s = S.readable_heap(example_heap, prepend='PREFIX:')
         for L in s.split('\n'): self.assertTrue(L.startswith('PREFIX:'))
     def test_iter_genpackets(self):
-        heap = {0x1234: (1,'abcdefgh'), S.HEAP_CNT_ID: (0, S.ADDRNULL)}
+        heap = {0x1234: (S.DIRECTADDR,'abcdefgh'), S.HEAP_CNT_ID: (S.IMMEDIATEADDR, S.ADDRNULL)}
         pkts = [p for p in S.iter_genpackets(heap)]
         self.assertEqual(len(pkts), 1)
         pkt = pkts[0]
@@ -81,27 +81,27 @@ class TestMethods(unittest.TestCase):
             [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 5])
         for i in range(1,5):
             rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
-            is_ext, id = rv[:2]
+            mode, id = rv[:2]
             raw_val = ''.join(rv[2:])
             if id == 0x1234:
-                self.assertEqual(is_ext, 1)
+                self.assertEqual(mode, S.DIRECTADDR)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
             elif id == S.HEAP_CNT_ID:
-                self.assertEqual(is_ext, 0)
+                self.assertEqual(mode, S.IMMEDIATEADDR)
                 self.assertEqual(raw_val, S.ADDRNULL)
             elif id == S.HEAP_LEN_ID:
-                self.assertEqual(is_ext, 0)
+                self.assertEqual(mode, S.IMMEDIATEADDR)
                 self.assertEqual(raw_val, '\x00\x00\x00\x00\x08')
             elif id == S.PAYLOAD_LEN_ID:
-                self.assertEqual(is_ext, 0)
+                self.assertEqual(mode, S.IMMEDIATEADDR)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 8)
             elif id == S.PAYLOAD_OFF_ID:
-                self.assertEqual(is_ext, 0)
+                self.assertEqual(mode, S.IMMEDIATEADDR)
                 self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
             else: self.assertTrue(False)
         self.assertEqual(pkt[48:], 'abcdefgh')
 
-        heap[0x1234] = (1, 'abcdefgh' * 4000)
+        heap[0x1234] = (S.DIRECTADDR, 'abcdefgh' * 4000)
         pkts = [p for p in S.iter_genpackets(heap)]
         self.assertEqual(len(pkts), 4)
         payloads = []
@@ -111,22 +111,22 @@ class TestMethods(unittest.TestCase):
                     [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 5])
                 for i in range(1,5):
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
-                    is_ext, id = rv[:2]
+                    mode, id = rv[:2]
                     raw_val = ''.join(rv[2:])
                     if id == 0x1234:
-                        self.assertEqual(is_ext, 1)
+                        self.assertEqual(mode, S.DIRECTADDR)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
                     elif id == S.HEAP_CNT_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(raw_val, S.ADDRNULL)
                     elif id == S.HEAP_LEN_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(raw_val, '\x00\x00\x00\x7d\x00')
                     elif id == S.PAYLOAD_LEN_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*6)
                     elif id == S.PAYLOAD_OFF_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], 0)
                     else: self.assertTrue(False)
                 payloads.append(pkt[6*S.ITEMLEN:])
@@ -135,19 +135,19 @@ class TestMethods(unittest.TestCase):
                     [S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 4])
                 for i in range(1,4):
                     rv = S.unpack(S.RAW_ITEM_FMT, pkt[8*i:8*i+8])[0]
-                    is_ext, id = rv[:2]
+                    mode, id = rv[:2]
                     raw_val = ''.join(rv[2:])
                     if id == S.HEAP_CNT_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(raw_val, S.ADDRNULL)
                     elif id == S.HEAP_LEN_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(raw_val, '\x00\x00\x00\x7d\x00')
                     elif id == S.PAYLOAD_LEN_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         if cnt < 3: self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], S.MAX_PACKET_LEN - S.ITEMLEN*5)
                     elif id == S.PAYLOAD_OFF_ID:
-                        self.assertEqual(is_ext, 0)
+                        self.assertEqual(mode, S.IMMEDIATEADDR)
                         self.assertEqual(S.unpack(S.DEFAULT_FMT, raw_val)[0][0], (S.MAX_PACKET_LEN-S.ITEMLEN*5)+(cnt-1)*(S.MAX_PACKET_LEN-S.ITEMLEN*4))
                     else: self.assertTrue(False)
                 payloads.append(pkt[5*S.ITEMLEN:])
@@ -261,11 +261,11 @@ class TestItemGroup(unittest.TestCase):
         self.ig['var3'] = 3.1415
         heap = self.ig.get_heap()
         # Test that HEAP_CNT is present
-        self.assertEqual(heap[S.HEAP_CNT_ID], (0,'\x00\x00\x00\x00\x05'))
+        self.assertEqual(heap[S.HEAP_CNT_ID], (S.IMMEDIATEADDR,'\x00\x00\x00\x00\x05'))
         # Test values
-        self.assertEqual(heap[self.id1], (0,'\x00\x00\x00\x00\x01'))
-        self.assertEqual(heap[self.id2], (0,'\x00\x00\x00\x00\x02'))
-        self.assertEqual(heap[self.id3], (1,struct.pack('>d', 3.1415)))
+        self.assertEqual(heap[self.id1], (S.IMMEDIATEADDR,'\x00\x00\x00\x00\x01'))
+        self.assertEqual(heap[self.id2], (S.IMMEDIATEADDR,'\x00\x00\x00\x00\x02'))
+        self.assertEqual(heap[self.id3], (S.DIRECTADDR,struct.pack('>d', 3.1415)))
         # Test descriptors
         descriptors = heap[S.DESCRIPTOR_ID]
         self.assertEqual(len(descriptors), 3)
@@ -284,11 +284,11 @@ class TestItemGroup(unittest.TestCase):
         heap.add_packet(p)
         heap.finalize()
         #heap = {
-        #    S.HEAP_CNT_ID: (0, '\x00\x00\x00\x00\x0f'),
+        #    S.HEAP_CNT_ID: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x0f'),
         #    S.DESCRIPTOR_ID: [self.ig.get_item(name).to_descriptor_string() for name in self.ig.keys()],
-        #    self.id1: (0, '\x00\x00\x00\x00\x0f'),
-        #    self.id2: (0, '\x00\x00\x00\x00\x0f'),
-        #    self.id3: (1, struct.pack('>d', 15.15)),
+        #    self.id1: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x0f'),
+        #    self.id2: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x0f'),
+        #    self.id3: (S.DIRECTADDR, struct.pack('>d', 15.15)),
         #}
         ig2.update(heap)
         self.assertEqual(ig2.heap_cnt, 3)
@@ -365,10 +365,10 @@ class TestTransmitter(unittest.TestCase):
         self.filename = 'junkspeadtestfile'
         self.tx = S.Transmitter(S.TransportFile(self.filename,'w'))
         self.heap = {
-            S.HEAP_CNT_ID: (0, '\x00\x00\x00\x00\x00\x0f'),
-            0x123: (0, '\x00\x00\x00\x00\x00\x0f'),
-            0x124: (0, '\x00\x00\x00\x00\x00\x0f'),
-            0x125: (1, struct.pack('>d', 15.15)),
+            S.HEAP_CNT_ID: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x00\x0f'),
+            0x123: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x00\x0f'),
+            0x124: (S.IMMEDIATEADDR, '\x00\x00\x00\x00\x00\x0f'),
+            0x125: (S.DIRECTADDR, struct.pack('>d', 15.15)),
         }
     def test_send_heap(self):
         self.tx.send_heap(self.heap)

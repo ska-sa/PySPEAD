@@ -202,14 +202,14 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
     while (item1 = PyIter_Next(iter1)) {
         iter2 = PyObject_GetIter(item1);
         if (iter2 == NULL) {
-            PyErr_Format(PyExc_ValueError, "items must be a list of (extension, id, raw_value) triplets");
+            PyErr_Format(PyExc_ValueError, "items must be a list of (mode, id, bin-val) triplets");
             Py_DECREF(item1);
             break;
         }
         for (i=0; i < 3; i++) {
             item2 = PyIter_Next(iter2);
             if (item2 == NULL) {
-                PyErr_Format(PyExc_ValueError, "items must be a list of (extension, id, raw_value) triplets");
+                PyErr_Format(PyExc_ValueError, "items must be a list of (mode, id, bin-val) triplets");
                 break;
             }
             if (PyInt_Check(item2)) {
@@ -217,7 +217,7 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
             } else if (PyLong_Check(item2)) {
                 data[i] = PyLong_AsLong(item2);
             } else {
-                PyErr_Format(PyExc_ValueError, "items must be a list of (extension, id, raw_value) triplets");
+                PyErr_Format(PyExc_ValueError, "items must be a list of (mode, id, bin-val) triplets");
                 Py_DECREF(item2);
                 break;
             }
@@ -928,6 +928,8 @@ PyMODINIT_FUNC init_spead(void) {
     PyModule_AddIntConstant(m, "DESCRIPTOR_ID", SPEAD_DESCRIPTOR_ID);
     PyModule_AddIntConstant(m, "STREAM_CTRL_ID", SPEAD_STREAM_CTRL_ID);
     PyModule_AddIntConstant(m, "STREAM_CTRL_TERM_VAL", SPEAD_STREAM_CTRL_TERM_VAL);
+    PyModule_AddIntConstant(m, "DIRECTADDR", SPEAD_DIRECTADDR);
+    PyModule_AddIntConstant(m, "IMMEDIATEADDR", SPEAD_IMMEDIATEADDR);
     PyModule_AddIntConstant(m, "ERR", SPEAD_ERR);
     PyModule_AddIntConstant(m, "ITEMLEN", SPEAD_ITEMLEN);
     PyModule_AddIntConstant(m, "ITEMSIZE", SPEAD_ITEMSIZE);

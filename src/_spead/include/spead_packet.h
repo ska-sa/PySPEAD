@@ -29,6 +29,8 @@
 #define SPEAD_ADDRMASK              (SPEAD_ITEMMASK >> (SPEAD_ITEMSIZE-SPEAD_ADDRSIZE))
 #define SPEAD_IDMASK                (SPEAD_ITEMMASK >> (SPEAD_ADDRSIZE+1))
 #define SPEAD_ADDRMODEMASK          0x1LL
+#define SPEAD_DIRECTADDR            0
+#define SPEAD_IMMEDIATEADDR         1
 
 #define SPEAD_MAX_PACKET_LEN       9200
 #define SPEAD_MAX_FMT_LEN          1024
