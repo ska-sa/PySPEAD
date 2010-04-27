@@ -1,5 +1,5 @@
 import unittest, spead as S, spead._spead as _S, numpy as n
-import bitstring, struct, sys, os, time, socket
+import struct, sys, os, time, socket
 #import logging; logging.basicConfig(level=logging.DEBUG)
 
 example_pkt = ''.join([

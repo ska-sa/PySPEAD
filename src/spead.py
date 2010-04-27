@@ -7,8 +7,7 @@ Data packet:
 [ Packet Payload .............................................
 .............................................................]
 '''
-import socket, math, numpy, logging, sys
-import time, bitstring
+import socket, math, numpy, logging, sys, time
 from _spead import *
 
 logger = logging.getLogger('spead')
@@ -64,6 +63,9 @@ for name, d in ITEM.iteritems(): NAME[d['ID']] = name
 #  \___/ \__|_|_|_|\__|\__, |
 #                      |___/ 
 
+def hexify(s):
+    return ''.join(map(lambda x: ('0'+hex(ord(x))[2:])[-2:], s))
+
 def calcsize(fmt):
     return sum([f[1] for f in unpack(FORMAT_FMT, fmt, cnt=-1)])
 
@@ -73,16 +75,14 @@ def calcdim(fmt):
 #def unpack(fmt, data, cnt=1, offset=0): return _spead.unpack(fmt, data, cnt=cnt, offset=offset)
 
 def readable_payload(payload, prepend=''):
-    bs = bitstring.BitString(bytes=payload)
-    return prepend + bs.hex[2:]
+    return prepend + hexify(payload)
 
 def readable_header(h, prepend=''):
     rv = unpack(RAW_ITEM_FMT, h)[0]
     mode, id = rv[:2]
     raw_val = ''.join(rv[2:])
-    bs = bitstring.BitString(bytes=raw_val)
-    if mode == DIRECTADDR: val = 'OFF=%s' % (bs.hex[2:])
-    else: val = 'VAL=%s' % (bs.hex[2:])
+    if mode == DIRECTADDR: val = 'OFF=%s' % (hexify(raw_val))
+    else: val = 'VAL=%s' % (hexify(raw_val))
     try: return prepend+'[ MODE=%d | NAME=%16s | %s ]' % (mode, NAME[id], val)
     except(KeyError): return prepend+'[ MODE=%d |   ID=%16x | %s ]' % (mode, id, val)
 
@@ -128,8 +128,7 @@ def readable_heap(heap, prepend=''):
                 if len(s) > (70 - len(prepend)): s = s[:(70-len(prepend)-3)]+'...'
                 rv.append(s)
         except(KeyError):
-            val = bitstring.BitString(bytes=heap[id][1])
-            s = '%16d: %s' % (id, val.hex)
+            s = '%16d: %s' % (id, '0x'+hexify(heap[id][1]))
             if len(s) > (70 - len(prepend)): s = s[:(70-len(prepend)-3)]+'...'
             rv.append(s)
     rv.append('^'*(60-len(prepend)))

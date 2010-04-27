@@ -2,7 +2,7 @@
 from distutils.core import setup, Extension
 import os, glob
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 def indir(dir, files): return [dir+f for f in files]
 def globdir(dir, files):
@@ -15,8 +15,8 @@ setup(name = 'spead',
     description = __doc__,
     long_description = __doc__,
     license = 'GPL',
-    author = 'Simon Ratcliffe, Aaron Parsons',
-    author_email = 'sratcliffe@gmail.com, aparsons@astron.berkeley.edu',
+    author = 'Aaron Parsons, Jason Manley, Simon Ratcliffe',
+    author_email = 'aparsons@astron.berkeley.edu',
     url = 'http://pypi.python.org/pypi/spead',
     package_dir = {'spead':'src'},
     packages = ['spead'],

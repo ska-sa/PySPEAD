@@ -2,16 +2,16 @@ import unittest, spead._spead as _S, spead as S
 import socket, time, struct
 
 example_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 3),
-    S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 3),
-    S.pack(S.ITEM_FMT, 1, 0x3333, 0),
-    S.pack(S.ITEM_FMT, 0, S.PAYLOAD_LENGTH_ID, 8),
+    S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 3),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.HEAP_CNT_ID, 3),)),
+    S.pack(S.ITEM_FMT, ((S.DIRECTADDR, 0x3333, 0),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.PAYLOAD_LEN_ID, 8),)),
     struct.pack('>d', 3.1415)])
 
 term_pkt = ''.join([
-    S.pack(S.HDR_FMT, S.SPEAD_MAGIC, S.VERSION, 2),
-    S.pack(S.ITEM_FMT, 0, S.FRAME_CNT_ID, 0),
-    S.pack(S.ITEM_FMT, 0, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),])
+    S.pack(S.HDR_FMT, ((S.MAGIC, S.VERSION, S.ITEMSIZE, S.ADDRSIZE, 0, 2),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.HEAP_CNT_ID, 0),)),
+    S.pack(S.ITEM_FMT, ((S.IMMEDIATEADDR, S.STREAM_CTRL_ID, S.STREAM_CTRL_TERM_VAL),)),])
 
 def loopback(data, port=8888):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
