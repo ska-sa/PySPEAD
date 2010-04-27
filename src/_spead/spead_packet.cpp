@@ -109,7 +109,7 @@ void spead_packet_copy(SpeadPacket *pkt1, SpeadPacket *pkt2) {
  * data must be at least 8 bytes long */
 int64_t spead_packet_unpack_header(SpeadPacket *pkt) {
     uint64_t hdr;
-    hdr = SPEAD_ITEM(pkt->data, 0);
+    hdr = SPEAD_HEADER(pkt->data);
     if ((SPEAD_GET_MAGIC(hdr) != SPEAD_MAGIC) || 
             (SPEAD_GET_VERSION(hdr) != SPEAD_VERSION) ||
             (SPEAD_GET_ITEMSIZE(hdr) != SPEAD_ITEMSIZE) || 
@@ -130,7 +130,8 @@ int64_t spead_packet_unpack_items(SpeadPacket *pkt) {
     // Read each raw item, starting at 1 to skip header
     for (i=1; i <= pkt->n_items; i++) {
         item = SPEAD_ITEM(pkt->data, i);
-        //printf("item%d: mode=%d, id=%d, val=%d\n", i, SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item));
+        //printf("   %02x%02x%02x%02x%02x%02x%02x%02x\n", ((char *)&item)[0], ((char *)&item)[1], ((char *)&item)[2], ((char *)&item)[3], ((char *)&item)[4], ((char *)&item)[5], ((char *)&item)[6], ((char *)&item)[7]);
+        //printf("item%d: mode=%lld, id=%lld, val=%lld\n", i, SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item));
         switch (SPEAD_ITEM_ID(item)) {
             case SPEAD_HEAP_CNT_ID:    pkt->heap_cnt    = (int64_t) SPEAD_ITEM_ADDR(item); break;
             case SPEAD_HEAP_LEN_ID:    pkt->heap_len    = (int64_t) SPEAD_ITEM_ADDR(item); break;
