@@ -4,9 +4,9 @@ def receive():
     print 'RX: Initializing...'
     t = spead.TransportFile(sys.stdin)
     ig = spead.ItemGroup()
-    for frame in spead.iterframes(t):
-        ig.update(frame)
-        print 'Got frame:', ig.frame_cnt
+    for heap in spead.iterheaps(t):
+        ig.update(heap)
+        print 'Got heap:', ig.heap_cnt
         for name in ig.keys():
             print '   ', name
             item = ig.get_item(name)
@@ -23,14 +23,14 @@ def transmit():
     ig.add_item(name='Var1', description='Description for Var1',
         shape=[], fmt='u\x00\x00\x10u\x00\x00\x10u\x00\x00\x10',
         init_val=(1,2,3))
-    tx.send_frame(ig.get_frame())
+    tx.send_heap(ig.get_heap())
     ig['Var1'] = (4,5,6)
-    tx.send_frame(ig.get_frame())
+    tx.send_heap(ig.get_heap())
     ig.add_item(name='Var2', description='Description for Var2',
         shape=[100,100], fmt='u\x00\x00\x10')
     data = numpy.arange(100*100); data.shape = (100,100)
     ig['Var2'] = data
-    tx.send_frame(ig.get_frame())
+    tx.send_heap(ig.get_heap())
     tx.end()
     #print 'TX: Done.'
 

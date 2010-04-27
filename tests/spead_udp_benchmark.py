@@ -10,16 +10,16 @@ def receive():
     ig = spead.ItemGroup()
     print 'RX: listening'
     pv_t1, pv_tx_time = 0, 0
-    for frame in spead.iterframes(tport):
+    for heap in spead.iterheaps(tport):
         t1 = time.time()
-        ig.update(frame)
+        ig.update(heap)
         t2 = time.time()
         t_total = t2 - ig['tx_time'] 
         t_update = t2 - t1
-        t_rx_frame = pv_t1 - ig['pv_time']
+        t_rx_heap = pv_t1 - ig['pv_time']
         print 't_total:', t_total
         print 't_update:', t_update
-        print 't_rx_frame (prev):', t_rx_frame
+        print 't_rx_heap (prev):', t_rx_heap
         print 't_tx (prev):', ig['pv_time'] - pv_tx_time
         print '-' * 60
         pv_t1 = t1
@@ -47,7 +47,7 @@ def transmit():
         if i % 2 == 0: ig['data'] = data0
         else: ig['data'] = data1
         ig['tx_time'] = time.time()
-        tx.send_frame(ig.get_frame())
+        tx.send_heap(ig.get_heap())
         ig['pv_time'] = time.time()
         t_tx = ig['pv_time'] - ig['tx_time']
         print 't_tx:', t_tx
