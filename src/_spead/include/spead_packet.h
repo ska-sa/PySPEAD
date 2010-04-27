@@ -48,6 +48,7 @@
 
 // Header Macros
 #define SPEAD_HEADERLEN             8
+#define SPEAD_HEADER(data) (ntohll(((uint64_t *)(data))[0]))
 #define SPEAD_HEADER_BUILD(nitems) ((((uint64_t) SPEAD_MAGIC) << 56) | (((uint64_t) SPEAD_VERSION) << 48) | (((uint64_t) SPEAD_ITEMSIZE) << 40) | (((uint64_t) SPEAD_ADDRSIZE) << 32) | (0xFFFFLL & (nitems)))
 #define SPEAD_GET_MAGIC(hdr) (0xFF & ((hdr) >> 56))
 #define SPEAD_GET_VERSION(hdr) (0xFF & ((hdr) >> 48))
@@ -58,9 +59,9 @@
 // ItemPointer Macros
 #define SPEAD_ITEM_BUILD(mode,id,val) (((SPEAD_ADDRMODEMASK & (mode)) << (SPEAD_ITEMSIZE-1)) | ((SPEAD_IDMASK & (id)) << (SPEAD_ADDRSIZE)) | (SPEAD_ADDRMASK & (val)))
 #define SPEAD_ITEM(data,n) (ntohll(((uint64_t *)(data + (n) * SPEAD_ITEMLEN))[0]))
-#define SPEAD_ITEM_MODE(item) ((int) SPEAD_ADDRMODEMASK & (item >> (SPEAD_ITEMSIZE-1)))
-#define SPEAD_ITEM_ID(item) ((int) SPEAD_IDMASK & (item >> SPEAD_ADDRSIZE))
-#define SPEAD_ITEM_ADDR(item) ((uint64_t) SPEAD_ADDRMASK & item)
+#define SPEAD_ITEM_MODE(item) ((int)(SPEAD_ADDRMODEMASK & (item >> (SPEAD_ITEMSIZE-1))))
+#define SPEAD_ITEM_ID(item) ((int)(SPEAD_IDMASK & (item >> SPEAD_ADDRSIZE)))
+#define SPEAD_ITEM_ADDR(item) ((uint64_t)(SPEAD_ADDRMASK & item))
 #define SPEAD_SET_ITEM(data,n,pkitem) (((uint64_t *)(data + (n) * SPEAD_ITEMLEN))[0] = htonll(pkitem))
 
 // Format Macros

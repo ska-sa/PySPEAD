@@ -162,8 +162,8 @@ class TestSpeadPacket(unittest.TestCase):
         self.pkt = _S.SpeadPacket()
     def test_attributes(self):
         pkt = _S.SpeadPacket()
+        self.assertEqual(pkt.heap_cnt, S.ERR)
         self.assertEqual(pkt.n_items, 0)
-        self.assertEqual(pkt.heap_cnt, -1)
         self.assertFalse(pkt.is_stream_ctrl_term)
         self.assertEqual(pkt.payload_len,0)
         self.assertEqual(pkt.payload_off,0)

@@ -43,15 +43,15 @@ PyObject *SpeadPktObj_unpack_header(SpeadPktObj *self, PyObject *args) {
         PyErr_Format(PyExc_ValueError, "len(data) = %d (needed at least %d)", size, SPEAD_ITEMLEN);
         return NULL;
     }
-    for (i=0; i < SPEAD_ITEMLEN; i++) {
+    for (i=0; i < SPEAD_HEADERLEN; i++) {
         self->pkt->data[i] = data[i];
     }
-    size = spead_packet_unpack_header(self->pkt);
+    size = (Py_ssize_t) spead_packet_unpack_header(self->pkt);
     if (size == SPEAD_ERR) {
         PyErr_Format(PyExc_ValueError, "data does not represent a SPEAD packet");
         return NULL;
     }
-    return Py_BuildValue("l", size);
+    return Py_BuildValue("n", size);
 }
 
 // Unpack items from a string
@@ -65,14 +65,17 @@ PyObject *SpeadPktObj_unpack_items(SpeadPktObj *self, PyObject *args) {
         return NULL;
     }
     for (i=0; i < item_bytes; i++) {
-        self->pkt->data[i + SPEAD_ITEMLEN] = data[i];
+        self->pkt->data[i + SPEAD_HEADERLEN] = data[i];
+        //if (i % SPEAD_ITEMLEN == 0) printf("\n");
+        //printf("%02x", data[i]);
     }
+    //printf("\n");
     size = spead_packet_unpack_items(self->pkt);
     if (size == SPEAD_ERR) {
         PyErr_Format(PyExc_MemoryError, "in SpeadPacket.unpack_items()");
         return NULL;
     }
-    return Py_BuildValue("l", size);
+    return Py_BuildValue("n", size);
 }
 
 // Unpack all from a string
@@ -110,7 +113,7 @@ PyObject *SpeadPktObj_unpack(SpeadPktObj *self, PyObject *args) {
     for (i=0; i < self->pkt->payload_len; i++) {
         self->pkt->payload[i] = data[i + item_bytes + SPEAD_ITEMLEN];
     }
-    return Py_BuildValue("l", SPEAD_ITEMLEN + item_bytes + self->pkt->payload_len);
+    return Py_BuildValue(BUILDLONG, SPEAD_ITEMLEN + item_bytes + self->pkt->payload_len);
 }
 
 // Pack all to a string
@@ -125,15 +128,15 @@ PyObject *SpeadPktObj_pack(SpeadPktObj *self) {
 }
 
 PyObject *SpeadPktObj_get_heapcnt(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->heap_cnt);
+    return Py_BuildValue(BUILDLONG, self->pkt->heap_cnt);
 }
 
 PyObject *SpeadPktObj_get_heaplen(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->heap_len);
+    return Py_BuildValue(BUILDLONG, self->pkt->heap_len);
 }
 
 PyObject *SpeadPktObj_get_nitems(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->n_items);
+    return Py_BuildValue("i", self->pkt->n_items);
 }
     
 PyObject *SpeadPktObj_get_isstreamctrlterm(SpeadPktObj *self, void *closure) {
@@ -142,11 +145,11 @@ PyObject *SpeadPktObj_get_isstreamctrlterm(SpeadPktObj *self, void *closure) {
 }
 
 PyObject *SpeadPktObj_get_payloadlen(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->payload_len);
+    return Py_BuildValue(BUILDLONG, self->pkt->payload_len);
 }
 
 PyObject *SpeadPktObj_get_payloadoff(SpeadPktObj *self, void *closure) {
-    return Py_BuildValue("l", self->pkt->payload_off);
+    return Py_BuildValue(BUILDLONG, self->pkt->payload_off);
 }
 
 // Get packet payload
@@ -154,7 +157,7 @@ PyObject *SpeadPktObj_get_payload(SpeadPktObj *self, void *closure) {
     if (self->pkt->payload_len == 0 || self->pkt->payload == NULL) {
         return Py_BuildValue("s", "");
     } else {
-        return Py_BuildValue("s#", self->pkt->payload, self->pkt->payload_len);
+        return Py_BuildValue("s#", self->pkt->payload, (Py_ssize_t) self->pkt->payload_len);
     }
 }
 int SpeadPktObj_set_payload(SpeadPktObj *self, PyObject *value, void *closure) {
@@ -189,7 +192,8 @@ PyObject *SpeadPktObj_get_items(SpeadPktObj *self, void *closure) {
     }
     for (i=0; i < self->pkt->n_items; i++) {
         item = SPEAD_ITEM(self->pkt->data, i+1);
-        PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iil)", SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item)));
+        if (sizeof(long) < 8) PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iiL)", SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item)));
+        else PyTuple_SET_ITEM(tup, i, Py_BuildValue("(iil)", SPEAD_ITEM_MODE(item), SPEAD_ITEM_ID(item), SPEAD_ITEM_ADDR(item)));
     }
     return tup;
 }
@@ -213,9 +217,11 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
                 break;
             }
             if (PyInt_Check(item2)) {
-                data[i] = PyInt_AsLong(item2);
+                if (sizeof(long) < 8) data[i] = PyInt_AsLong(item2);
+                else data[i] = PyInt_AsLong(item2);
             } else if (PyLong_Check(item2)) {
-                data[i] = PyLong_AsLong(item2);
+                if (sizeof(long) < 8) data[i] = PyLong_AsLongLong(item2);
+                else data[i] = PyLong_AsLong(item2);
             } else {
                 PyErr_Format(PyExc_ValueError, "items must be a list of (mode, id, bin-val) triplets");
                 Py_DECREF(item2);
@@ -240,7 +246,6 @@ int SpeadPktObj_set_items(SpeadPktObj *self, PyObject *items, void *closure) {
     return 0;
 }
 
-// Bind methods to object
 static PyMethodDef SpeadPktObj_methods[] = {
     {"unpack_header", (PyCFunction)SpeadPktObj_unpack_header, METH_VARARGS,
         "unpack_header(data)\nSet packet header from binary string. Raise ValueError if data doesn't match packet format.  Otherwise, return # bytes read."},
@@ -428,9 +433,9 @@ static PyMethodDef SpeadHeapObj_methods[] = {
 };
 
 static PyMemberDef SpeadHeapObj_members[] = {
-    {"heap_cnt", T_LONG, offsetof(SpeadHeapObj, heap) +
+    {"heap_cnt", T_INT64, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, heap_cnt), 0, "heap_cnt"},
-    {"heap_len", T_LONG, offsetof(SpeadHeapObj, heap) +
+    {"heap_len", T_INT64, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, heap_len), 0, "heap_len"},
     {"is_valid", T_INT, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, is_valid), 0, "is_valid"},
@@ -731,14 +736,23 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
             switch(fmt_types[i]) {
                 case 'u':
                     u64 = spead_u64_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
-                    if (fmt_bits[i] < 64) {
+                    if (fmt_bits[i] < 8*sizeof(long)) {
                         PyTuple_SET_ITEM(tup, i, PyInt_FromLong((long) u64)); break;
-                    } else {
+                    } else if (fmt_bits[i] == 8*sizeof(long)) {
                         PyTuple_SET_ITEM(tup, i, PyLong_FromUnsignedLong((unsigned long) u64)); break;
+                    } else if (fmt_bits[i] < 8*sizeof(long long)) {
+                        PyTuple_SET_ITEM(tup, i, PyLong_FromLongLong((long long) u64)); break;
+                    } else {
+                        PyTuple_SET_ITEM(tup, i, PyLong_FromUnsignedLongLong((unsigned long long) u64)); break;
                     }
                 case 'i':
                     i64 = spead_i64_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
-                    PyTuple_SET_ITEM(tup, i, PyInt_FromLong((long) i64)); break;
+                    if (fmt_bits[i] <= 8*sizeof(long)) {
+                        PyTuple_SET_ITEM(tup, i, PyInt_FromLong((long) i64)); break;
+                    } else {
+                        PyTuple_SET_ITEM(tup, i, PyLong_FromLongLong((long long) i64)); break;
+                    }
+                    break;
                 case 'f':
                     if (fmt_bits[i] == 32) {
                         u32 = spead_u32_align(data + sizeof(char)*(offset/8), offset % 8, fmt_bits[i]);
@@ -826,7 +840,7 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
             switch(fmt_types[i]) {
                 case 'u':
                     //printf("   Uint copy at byte=%d offset=%d, bits=%d\n", offset/8, offset%8, fmt_bits[i]);
-                    u64val = (uint64_t) PyInt_AsUnsignedLongMask(item2);
+                    u64val = (uint64_t) PyInt_AsUnsignedLongLongMask(item2);
                     //printf("   got %ld\n", u64val);
                     if (PyErr_Occurred()) {
                         flag = 1;

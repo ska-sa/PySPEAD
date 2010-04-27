@@ -9,4 +9,6 @@
 #include "py_spead_heap.h"
 #include "py_buffer_socket.h"
 
+#define T_INT64 (sizeof(long) < 8 ? T_LONGLONG : T_LONG)
+#define BUILDLONG (sizeof(long) < 8 ? "L" : "l")
 #endif
