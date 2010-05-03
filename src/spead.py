@@ -180,8 +180,8 @@ class Descriptor:
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
         try:
             val = unpack(self.format, s, cnt=self.size, offset=self._offset)
-        except(ValueError):
-            raise ValueError('Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
+        except(ValueError, e):
+            raise ValueError(e.msg() + 'Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
         if self.shape == -1 or len(self.shape) != 0:
             val = numpy.array(val)
             if self.shape != -1: val.shape = self.shape
@@ -392,9 +392,7 @@ def iter_genpackets(heap, max_pkt_size=MAX_PACKET_LEN):
         # Pad out to ADDRLEN for bits < ADDRSIZE
         else:
             if DEBUG: logger.debug('itergenpackets: Adding standard item to header, id=%d, len(val)=%d' % (id, len(val)))
-            try: items.append((IMMEDIATEADDR, id, unpack(DEFAULT_FMT, val)[0][0]))
-            except(ValueError):
-                raise ValueError('Failed to unpack value for id=%d fmt=%s len(val)=%d' % (id, unpack(FMT_FMT, fmt), len(val)))
+            items.append((IMMEDIATEADDR, id, unpack(DEFAULT_FMT, (ADDRNULL+val)[-ADDRLEN:])[0][0]))
     heap_pyld = ''.join(heap_pyld)
     heap_len, payload_cnt, offset = len(heap_pyld), 0, 0
     while True:
