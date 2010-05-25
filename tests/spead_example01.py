@@ -26,13 +26,13 @@ def transmit():
     tx = spead.Transmitter(spead.TransportFile(FILENAME,'w'))
     ig = spead.ItemGroup()
     ig.add_item(name='Var1', description='Description for Var1',
-        shape=[], fmt='u\x00\x00\x10u\x00\x00\x10u\x00\x00\x10',
+        shape=[], fmt=spead.mkfmt(('u',32),('u',32),('u',32)),
         init_val=(1,2,3))
     tx.send_heap(ig.get_heap())
     ig['Var1'] = (4,5,6)
     tx.send_heap(ig.get_heap())
     ig.add_item(name='Var2', description='Description for Var2',
-        shape=[DIM,DIM], fmt='u\x00\x00\x10')
+        shape=[DIM,DIM], fmt=spead.mkfmt(('u',32)))
     data = numpy.arange(DIM*DIM); data.shape = (DIM,DIM)
     ig['Var2'] = data
     tx.send_heap(ig.get_heap())
