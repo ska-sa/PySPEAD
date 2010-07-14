@@ -233,7 +233,7 @@ int spead_heap_got_all_packets(SpeadHeap *heap) {
     if (heap->has_all_packets != SPEAD_ERR) return heap->has_all_packets; // Don't recompute if we do know the answer
     heap->has_all_packets = 0;
     while (pkt->next != NULL) {
-        if (pkt->payload_off + pkt->payload_len + 1 != pkt->next->payload_off) return 0;
+        if (pkt->payload_off + pkt->payload_len != pkt->next->payload_off) return 0;
         pkt = pkt->next;
     }
     if (pkt->payload_off + pkt->payload_len != heap->heap_len) return 0;
