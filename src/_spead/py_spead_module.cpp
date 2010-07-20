@@ -439,6 +439,8 @@ static PyMemberDef SpeadHeapObj_members[] = {
         offsetof(SpeadHeap, heap_len), 0, "heap_len"},
     {"is_valid", T_INT, offsetof(SpeadHeapObj, heap) +
         offsetof(SpeadHeap, is_valid), 0, "is_valid"},
+    {"has_all_packets", T_INT, offsetof(SpeadHeapObj, heap) +
+        offsetof(SpeadHeap, has_all_packets), 0, "has_all_packets"},
     {NULL}  /* Sentinel */
 };
 
@@ -517,10 +519,10 @@ static int BsockObject_init(BsockObject *self, PyObject *args, PyObject *kwds) {
 }
 
 static PyObject * BsockObject_start(BsockObject *self, PyObject *args) {
-    int port;
-    if (!PyArg_ParseTuple(args, "i", &port)) return NULL;
+    int port, buffer_size;
+    if (!PyArg_ParseTuple(args, "ii", &port,&buffer_size)) return NULL;
     PyEval_InitThreads();
-    buffer_socket_start(&self->bs, port);
+    buffer_socket_start(&self->bs, port, buffer_size);
     Py_INCREF(Py_None);
     return Py_None;
 }

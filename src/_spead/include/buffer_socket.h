@@ -52,6 +52,7 @@ typedef struct {
     int (*callback)(SpeadPacket *, void *);
     int run_threads;
     int port;
+    int buffer_size;
     void *userdata;
 } BufferSocket;
 
@@ -59,10 +60,10 @@ int default_callback(SpeadPacket *pkt, void *userdata);
 void buffer_socket_init(BufferSocket *, size_t item_count);
 void buffer_socket_wipe(BufferSocket *);
 void buffer_socket_set_callback(BufferSocket *, int (*cb_func)(SpeadPacket *, void *));
-int buffer_socket_start(BufferSocket *bs, int port);
+int buffer_socket_start(BufferSocket *bs, int port, int buffer_size);
 int buffer_socket_stop(BufferSocket *bs);
 void *buffer_socket_net_thread(void *arg);
 void *buffer_socket_data_thread(void *arg);
-socket_t buffer_socket_setup_socket(short port);
+socket_t buffer_socket_setup_socket(short port, int buffer_size);
 
 #endif

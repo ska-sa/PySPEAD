@@ -7,7 +7,8 @@ Data packet:
 [ Packet Payload .............................................
 .............................................................]
 '''
-import socket, math, numpy, logging, sys, time
+import socket, math, numpy, logging, sys, time, struct
+from numpy.lib.utils import safe_eval
 from _spead import *
 
 logger = logging.getLogger('spead')
@@ -24,6 +25,7 @@ DESCRIPTION_ID = 0x11
 SHAPE_ID = 0x12
 FORMAT_ID = 0x13
 ID_ID = 0x14
+DTYPE_ID = 0x15
 ADDRNULL = '\x00'*ADDRLEN
 DEBUG = False
 
@@ -49,6 +51,7 @@ ITEM = {
     'STREAM_CTRL':    {'ID':STREAM_CTRL_ID,    'FMT':DEFAULT_FMT,        'CNT':1},
     'NAME':           {'ID':NAME_ID,           'FMT':STR_FMT,            'CNT':-1},
     'DESCRIPTION':    {'ID':DESCRIPTION_ID,    'FMT':STR_FMT,            'CNT':-1},
+    'DTYPE':          {'ID':DTYPE_ID,          'FMT':STR_FMT,            'CNT':-1},
     'SHAPE':          {'ID':SHAPE_ID,          'FMT':SHAPE_FMT,          'CNT':-1},
     'FORMAT':         {'ID':FORMAT_ID,         'FMT':FORMAT_FMT,         'CNT':-1},
     'ID':             {'ID':ID_ID,             'FMT':ID_FMT,             'CNT':1},
@@ -147,7 +150,7 @@ class Descriptor:
     vector shape, and format for representation as a binary strings.  A shape of [] indicates an Item 
     with a singular value, while a shape of [1] indicates a value that is a 1D array with one entry.  
     A shape of -1 creates a dynamically-sized 1D array.'''
-    def __init__(self, from_string=None, id=None, name='', description='', shape=[], fmt=DEFAULT_FMT):
+    def __init__(self, from_string=None, id=None, name='', description='', shape=[], fmt=DEFAULT_FMT, ndarray=None):
         if from_string: self.from_descriptor_string(from_string)
         else:
             self.id = id
@@ -155,7 +158,29 @@ class Descriptor:
             self.description = description
             self.shape = shape
             self.format = fmt
-            self._calcsize()
+            self.dtype_str = None
+            self.dtype = None
+            self.fortran_order = False
+            if ndarray is not None:
+                if type(ndarray) == numpy.ndarray:
+                    self.dtype_str = self._dtype_pack(ndarray)
+                    self.shape = ndarray.shape
+                    self.size = numpy.multiply.reduce(self.shape)
+                else:
+                    raise TypeError('The specified ndarray is not of type numpy.ndarray (it has type: ' + str(type(ndarray)) + ')')
+            else:
+                self._calcsize()
+
+    def _dtype_pack(self, ndarray):
+        '''Generate a numpy compatible description string from the specified numpy array.'''
+        d = numpy.lib.format.header_data_from_array_1_0(ndarray)
+        header = ["{"]
+        for key, value in sorted(d.items()):
+            # Need to use repr here, since we eval these when reading
+            header.append("'%s': %s, " % (key, repr(value)))
+        header.append("}")
+        return "".join(header)
+
     def _calcsize(self):
         '''Generate self.size, which says how many repetitions of self.format are in a vector.  A size
         of -1 signifies a 1D dynamically sized array.'''
@@ -167,6 +192,7 @@ class Descriptor:
         # If nbits is smaller than ADDRSIZE, generate offset needed for reading ADDRSIZE
         if self.nbits > 0 and self.nbits < ADDRSIZE: self._offset = ADDRSIZE - self.nbits
         else: self._offset = 0
+
     def pack(self, val):
         '''Convert a series of values into a binary string according to the format of this Descriptor.
         Multi-dimensonal arrays are serialized in C-like order (as opposed to Fortran-like).'''
@@ -175,17 +201,32 @@ class Descriptor:
             dim = calcdim(self.format)
             if self.shape == -1: val = numpy.reshape(val, (val.size/dim,dim))
             else: val = numpy.reshape(val, (self.size, dim))
-        return pack(self.format, val)
+        st = time.time()
+        ret = pack(self.format, val)
+        return ret
+
+    def pack_numpy(self, val):
+        val = numpy.array(val)
+         # make sure we have a valid array
+        return val.byteswap().data.__str__()
+
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
         try:
             val = unpack(self.format, s, cnt=self.size, offset=self._offset)
-        except(ValueError, e):
-            raise ValueError(e.msg() + 'Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
+        except ValueError, e:
+            raise ValueError(''.join(e.args) + ': Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
         if self.shape == -1 or len(self.shape) != 0:
             val = numpy.array(val)
             if self.shape != -1: val.shape = self.shape
         return val
+
+    def unpack_numpy(self,s):
+        '''If our format string is numpy compatible, then convert string directly into numpy array.'''
+        val = numpy.fromstring(s, dtype=self.dtype, count=self.size).byteswap()
+        val.shape = self.shape
+        return val
+
     #def resolve_ids(self, id_dict={}):
     #    '''Use a dictionary of IDs to resolve descriptors that are linked to other descriptors.'''
     #    self._unresolved_ids = {}
@@ -209,7 +250,48 @@ class Descriptor:
             DESCRIPTION_ID: (DIRECTADDR, self.description),
             HEAP_CNT_ID: (IMMEDIATEADDR, ADDRNULL),
         }
+        if self.dtype_str is not None:
+            heap[DTYPE_ID] = (DIRECTADDR, self.dtype_str)
+
         return ''.join([p for p in iter_genpackets(heap)])
+
+    def _dtype_unpack(self, s):
+        # pulled from np.lib.format.read_array_header_1_0
+        # The header is a pretty-printed string representation of a literal Python
+        # dictionary with trailing newlines padded to a 16-byte boundary. The keys
+        # are strings.
+        #   "shape" : tuple of int
+        #   "fortran_order" : bool
+        #   "descr" : dtype.descr
+        try:
+            d = safe_eval(s)
+        except SyntaxError, e:
+            msg = "Cannot parse descriptor: %r\nException: %r"
+            raise ValueError(msg % (s, e))
+        if not isinstance(d, dict):
+            msg = "Descriptor is not a dictionary: %r"
+            raise ValueError(msg % d)
+        keys = d.keys()
+        keys.sort()
+        if keys != ['descr', 'fortran_order', 'shape']:
+            msg = "Descriptor does not contain the correct keys: %r"
+            raise ValueError(msg % (keys,))
+        # Sanity-check the values.
+        if (not isinstance(d['shape'], tuple) or
+            not numpy.all([isinstance(x, (int,long)) for x in d['shape']])):
+            msg = "shape is not valid: %r"
+            raise ValueError(msg % (d['shape'],))
+        if not isinstance(d['fortran_order'], bool):
+            msg = "fortran_order is not a valid bool: %r"
+            raise ValueError(msg % (d['fortran_order'],))
+        try:
+            dtype = numpy.dtype(d['descr'])
+        except TypeError, e:
+            msg = "descr is not a valid dtype descriptor: %r"
+            raise ValueError(msg % (d['descr'],))
+        return d['shape'], d['fortran_order'], dtype
+
+
     def from_descriptor_string(self, s):
         '''Set the attributes of this descriptor from a string generated by to_descriptor_string().'''
         for heap in iterheaps(TransportString(s)):
@@ -222,9 +304,19 @@ class Descriptor:
                 else: self.shape = [s[1] for s in shape]
             except(IndexError,TypeError): self.shape = []
             self.format = items[FORMAT_ID]
+            self.dtype_str = None
+            self.dtype = None
+            self.fortran_order = False
+            if items.has_key(DTYPE_ID):
+                self.dtype_str = ''.join(f[0] for f in items[DTYPE_ID])
+                print "Dtype string:",self.dtype_str
+                self.shape, self.fortran_order, self.dtype = self._dtype_unpack(self.dtype_str)
+                print self.dtype,self.fortran_order,self.shape
+                self.size = numpy.multiply.reduce(self.shape)
+            else:
+                self._calcsize()
             self.name = ''.join([f[0] for f in items[NAME_ID]])
             self.description = ''.join([f[0] for f in items[DESCRIPTION_ID]])
-            self._calcsize()
 
 #  ___ _                 
 # |_ _| |_ ___ _ __ ___  
@@ -236,9 +328,12 @@ class Item(Descriptor):
     '''An Item inherits from a Descriptor, and adds a value that can be set, retrieved, an converted
     into a binary string.  An Item also keeps track of when its value has changed.'''
     def __init__(self, name='', id=None, description='', 
-            shape=[], fmt=DEFAULT_FMT, from_string=None, init_val=None):
+            shape=[], fmt=DEFAULT_FMT, from_string=None, ndarray=None, init_val=None):
+        if init_val is not None and type(init_val) == numpy.ndarray and shape==[] and fmt==DEFAULT_FMT:
+            ndarray = init_val
+             # if we can, setup our shape and format from the initial value. Honour any override from the user in terms of shape and format.
         Descriptor.__init__(self, from_string=from_string, id=id,
-            name=name, description=description, shape=shape, fmt=fmt)
+            name=name, description=description, shape=shape, fmt=fmt, ndarray=ndarray)
         self._value = None
         if not init_val is None: self.set_value(init_val)
     def set_value(self, v):
@@ -250,7 +345,8 @@ class Item(Descriptor):
         self._changed = True
     def from_value_string(self, s):
         '''Set the value of this Item by unpacking the provided binary string.'''
-        self._value, self._changed = self.unpack(s), True
+        if self.dtype_str is not None: self._value, self._changed = self.unpack_numpy(s), True
+        else: self._value, self._changed = self.unpack(s), True
     def get_value(self):
         '''Directly return the value of this Item.'''
         v = self._value
@@ -261,7 +357,9 @@ class Item(Descriptor):
     def to_value_string(self):
         '''Return the value of this Item encoded as a binary string.'''
         if self._value == None: raise RuntimeError('item "%s" (ID=%d): value was not initialized' % (self.name, self.id))
-        try: return self.pack(self._value)
+        try:
+            if self.dtype_str is not None: return self.pack_numpy(self._value)
+            else: return self.pack(self._value)
         except(TypeError,ValueError): raise TypeError('item "%s" (ID=%d): had an invalid value for format=%s, shape=%s: %s' % (self.name, self.id, [self.format], self.shape, self._value))
     def has_changed(self):
         '''Return whether this Item has been changed.'''
@@ -269,7 +367,7 @@ class Item(Descriptor):
     def unset_changed(self):
         '''Mark this Item as unchanged.'''
         self._changed = False
-            
+
 #  ___ _                  ____                       
 # |_ _| |_ ___ _ __ ___  / ___|_ __ ___  _   _ _ __  
 #  | || __/ _ \ '_ ` _ \| |  _| '__/ _ \| | | | '_ \ 
@@ -488,12 +586,12 @@ class TransportUDPtx:
         self._udp_out.sendto(data, self._tx_ip_port)
 
 class TransportUDPrx(BufferSocket):
-    def __init__(self, port, pkt_count=128):
+    def __init__(self, port, pkt_count=128, buffer_size=0):
         BufferSocket.__init__(self, pkt_count)
         self.pkts = []
         def callback(pkt): self.pkts.insert(0, pkt)
         self.set_callback(callback)
-        self.start(port)
+        self.start(port, buffer_size)
     def iterpackets(self):
         while self.is_running() or len(self.pkts) > 0:
             if len(self.pkts) > 0: yield self.pkts.pop()
@@ -555,6 +653,7 @@ def iterheaps(tport):
             heap.finalize()
             logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
             if heap.is_valid: yield heap
+            else: logger.warning('iterheaps: Invalid spead heap %d found (SpeadHeap.has_all_packets=%d)' % (heap.heap_cnt,heap.has_all_packets))
             logger.info('iterheaps: Starting new heap')
             heap = SpeadHeap()
             if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap

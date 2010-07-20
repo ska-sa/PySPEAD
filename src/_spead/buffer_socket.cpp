@@ -82,13 +82,14 @@ void buffer_socket_set_callback(BufferSocket *bs, int (*cb_func)(SpeadPacket *, 
     bs->callback = cb_func;
 }
 
-int buffer_socket_start(BufferSocket *bs, int port) {
+int buffer_socket_start(BufferSocket *bs, int port, int buffer_size) {
     /* Start socket => buffer and buffer => callback threads */
     if (bs->run_threads != 0) {
         fprintf(stderr, "buffer_socket_start: BufferSocket already running.\n");
         return -1;
     }
     bs->port = port;
+    bs->buffer_size = buffer_size;
     DBGPRINTF("buffer_socket_start: Setting bs->run_threads to 1\n");
     bs->run_threads = 1;
     pthread_create(&bs->net_thread, NULL, buffer_socket_net_thread, bs);
@@ -161,7 +162,7 @@ void *buffer_socket_net_thread(void *arg) {
     RingItem *this_slot;
     SpeadPacket *pkt;
 
-    socket_t sock = buffer_socket_setup_socket((short) bs->port);
+    socket_t sock = buffer_socket_setup_socket((short) bs->port, (int) bs->buffer_size);
     ssize_t num_bytes=0;
     int is_ready;
     fd_set readset;
@@ -215,9 +216,9 @@ void *buffer_socket_net_thread(void *arg) {
     return NULL;
 }
 
-socket_t buffer_socket_setup_socket(short port) {
+socket_t buffer_socket_setup_socket(short port, int buffer_size) {
     /* Open up a UDP socket on the specified port for receiving data */
-    int sock = -1;
+    int result, sock = -1;
     struct sockaddr_in my_addr; // server's address information
     sock = socket(PF_INET, SOCK_DGRAM, 0); // create a new UDP socket descriptor
     if (sock == -1) return -1;
@@ -231,5 +232,18 @@ socket_t buffer_socket_setup_socket(short port) {
     // prevent "address already in use" errors
     const int on = 1;
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&on, sizeof(on)) == -1) return -1;
+    if (buffer_size > 0) {
+     result = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
+     if(result < 0) {
+      #ifdef SO_RCVBUFFORCE
+      result = setsockopt(sock, SOL_SOCKET, SO_RCVBUFFORCE, &buffer_size, sizeof(buffer_size));
+      if(result < 0){
+      #endif
+      fprintf(stderr, "warning unable to set receive buffer size to %d: %s\n", buffer_size, strerror(errno));
+      #ifdef SO_RCVBUFFORCE
+      }
+      #endif
+     }
+    } // end of if buffer size to be set
     return sock;
 }
