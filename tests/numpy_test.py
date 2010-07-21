@@ -48,10 +48,15 @@ def transmit_numpy():
     tvis = np.random.normal(size=(channels,baselines,2)).astype(np.float32)
     ig.add_item(name='vis_data', description='The complex visibility spectrum for a single time dump', init_val=tvis)
      # using init_val with a numpy array will use the numpy transport automatically.
+    #ig.add_item(name='vis_data', description='The complex visibility spectrum for a single time dump', ndarray=(np.dtype(np.float32), (channels,baselines,2)))
+    #ig['vis_data'] = np.random.normal(size=(channels,baselines,2)).astype(np.float32)
+     # you can also specify the array type explicitly via a tuple
+    t_heap_send = 0
     for x in range(iterations):
         ig['data_timestamp'] = int(time.time() * 1000)
+        t_heap_send = time.time()
         tx.send_heap(ig.get_heap())
-        print "Sent data for timestamp",ig['data_timestamp']
+        print "Sent data for timestamp",ig['data_timestamp'],"in",time.time()-t_heap_send,"s"
         ig['vis_data'] = np.random.normal(size=(channels,baselines,2)).astype(np.float32)
         time.sleep(0.5)
     tx.end()
@@ -64,16 +69,16 @@ def transmit_std():
     ig.add_item(name='data_timestamp', description='Timestamp in epoch ms for the current visibility sample',shape=[1], fmt=spead.mkfmt(('u',64)))
     ig.add_item(name='vis_data', description='The complex visibility spectrum for a single time dump', shape=[channels,baselines,2], fmt=spead.mkfmt(('u',32)))
      # using init_val with a numpy array will use the numpy transport automatically.
+    t_heap_send = 0
     for x in range(iterations):
         ig['data_timestamp'] = int(time.time() * 1000)
         ig['vis_data'] = np.random.normal(size=(channels,baselines,2)).astype(np.float32)
+        t_heap_send = time.time()
         tx.send_heap(ig.get_heap())
-        print "Sent data for timestamp",ig['data_timestamp']
+        print "Sent data for timestamp",ig['data_timestamp'],"in",time.time()-t_heap_send,"s"
         time.sleep(15)
     tx.end()
     print 'TX: Done.'
-
-
 
 parser = OptionParser()
 parser.add_option("-p", "--profile", dest="profile", action="store_true", default=False, help="Use cProfile.")

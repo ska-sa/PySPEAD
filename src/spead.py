@@ -149,7 +149,12 @@ class Descriptor:
     '''A Descriptor is meta-information associated with an Item, including its id, name, description, 
     vector shape, and format for representation as a binary strings.  A shape of [] indicates an Item 
     with a singular value, while a shape of [1] indicates a value that is a 1D array with one entry.  
-    A shape of -1 creates a dynamically-sized 1D array.'''
+    A shape of -1 creates a dynamically-sized 1D array.
+
+    A Numpy compatible descriptor can also be created. This utilises numpy style packing and unpacking in the data
+    transport and is significantly faster. The ndarray parameter takes either an existing numpy array or a two element
+    tuple containing a numpy compatible dtype and a shape tuple. e.g. ndarray=(np.float32,(512,24))
+    '''
     def __init__(self, from_string=None, id=None, name='', description='', shape=[], fmt=DEFAULT_FMT, ndarray=None):
         if from_string: self.from_descriptor_string(from_string)
         else:
@@ -162,18 +167,24 @@ class Descriptor:
             self.dtype = None
             self.fortran_order = False
             if ndarray is not None:
-                if type(ndarray) == numpy.ndarray:
+                if type(ndarray) == numpy.ndarray or (type(ndarray) == type(()) and len(ndarray) == 2):
                     self.dtype_str = self._dtype_pack(ndarray)
-                    self.shape = ndarray.shape
+                    self.shape = ndarray.shape if type(ndarray) == numpy.ndarray else ndarray[1]
                     self.size = numpy.multiply.reduce(self.shape)
                 else:
-                    raise TypeError('The specified ndarray is not of type numpy.ndarray (it has type: ' + str(type(ndarray)) + ')')
+                    raise TypeError('The specified ndarray is not a tuple (dtype,shape) or an array of type numpy.ndarray (it has type: ' + str(type(ndarray)) + ')')
             else:
                 self._calcsize()
 
     def _dtype_pack(self, ndarray):
         '''Generate a numpy compatible description string from the specified numpy array.'''
-        d = numpy.lib.format.header_data_from_array_1_0(ndarray)
+        if type(ndarray) == type(()):
+            d = {}
+            d['shape'] = ndarray[1]
+            d['fortran_order'] = False
+            d['descr'] = numpy.lib.format.dtype_to_descr(ndarray[0])
+        else:
+            d = numpy.lib.format.header_data_from_array_1_0(ndarray)
         header = ["{"]
         for key, value in sorted(d.items()):
             # Need to use repr here, since we eval these when reading
