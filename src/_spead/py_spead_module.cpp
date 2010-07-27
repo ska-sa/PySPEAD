@@ -710,8 +710,8 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"fmt", "data", "cnt", "offset", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#s#|li", kwlist, &fmt, &fmt_len, &data, &data_len, &cnt, &offset))
         return NULL;
-    if (offset >= 8) {
-        PyErr_Format(PyExc_ValueError, "offset must be < 8 (got %d)", offset);
+    if (offset > 8) {
+        PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
         return NULL;
     }
     tot_fmt_bits = _spead_unpack_fmt(fmt, fmt_len, fmt_types, fmt_bits);
@@ -789,7 +789,7 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"fmt", "data", "offset", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds,"s#O|i", kwlist, &fmt, &fmt_len, &tup, &offset))
         return NULL;
-    if (offset >= 8) {
+    if (offset > 8) {
         PyErr_Format(PyExc_ValueError, "offset must be <= 8 (got %d)", offset);
         return NULL;
     }

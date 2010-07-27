@@ -346,6 +346,7 @@ class Item(Descriptor):
         Descriptor.__init__(self, from_string=from_string, id=id,
             name=name, description=description, shape=shape, fmt=fmt, ndarray=ndarray)
         self._value = None
+        self._changed = False
         if not init_val is None: self.set_value(init_val)
     def set_value(self, v):
         '''Directly set the value of this Item to the provided value, and mark this Item as changed.'''
