@@ -112,8 +112,8 @@ int64_t spead_packet_unpack_header(SpeadPacket *pkt) {
     hdr = SPEAD_HEADER(pkt->data);
     if ((SPEAD_GET_MAGIC(hdr) != SPEAD_MAGIC) || 
             (SPEAD_GET_VERSION(hdr) != SPEAD_VERSION) ||
-            (SPEAD_GET_ITEMSIZE(hdr) != SPEAD_ITEMSIZE) || 
-            (SPEAD_GET_ADDRSIZE(hdr) != SPEAD_ADDRSIZE)) {
+            (SPEAD_GET_ITEMSIZE(hdr) != SPEAD_ITEM_PTR_WIDTH) || 
+            (SPEAD_GET_ADDRSIZE(hdr) != SPEAD_HEAP_ADDR_WIDTH)) {
         return SPEAD_ERR;
     }
     pkt->n_items = SPEAD_GET_NITEMS(hdr);
@@ -298,9 +298,8 @@ int spead_heap_finalize(SpeadHeap *heap) {
                         }
                     }
                     if (flag) break;
-                    pkt2 = pkt2->next; j = 0;  // Move on to first itemptr in next packet
+                    pkt2 = pkt2->next; j = 1;  // Move on to first itemptr (but not the header!) in next packet
                 } while (pkt2 != NULL);
-                //printf("Allocating item of len %d\n", item->len);
                 if (item->len < 0) {  // This happens when the last packet in a heap goes missing
                     item->is_valid = 0;
                 } else {
@@ -310,7 +309,6 @@ int spead_heap_finalize(SpeadHeap *heap) {
                     pkt2 = heap->head_pkt;
                     for (o=0; o < item->len; o++) {
                         while (pkt2 != NULL && (pkt2->payload_off + pkt2->payload_len <= off + o)) {
-                            //printf("Moving to next packet\n");
                             pkt2 = pkt2->next;
                         }
                         // If packet with relevant data is missing, fill with zeros and mark invalid

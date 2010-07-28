@@ -47,7 +47,7 @@ ITEM = {
     'HEAP_LEN':      {'ID':HEAP_LEN_ID,      'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_LEN':    {'ID':PAYLOAD_LEN_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
     'PAYLOAD_OFF':    {'ID':PAYLOAD_OFF_ID, 'FMT':DEFAULT_FMT,        'CNT':1},
-    'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':MAGIC,        'CNT':1},
+    'DESCRIPTOR':     {'ID':DESCRIPTOR_ID,     'FMT':DEFAULT_FMT,        'CNT':1},
     'STREAM_CTRL':    {'ID':STREAM_CTRL_ID,    'FMT':DEFAULT_FMT,        'CNT':1},
     'NAME':           {'ID':NAME_ID,           'FMT':STR_FMT,            'CNT':-1},
     'DESCRIPTION':    {'ID':DESCRIPTION_ID,    'FMT':STR_FMT,            'CNT':-1},
