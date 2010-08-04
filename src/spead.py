@@ -320,9 +320,7 @@ class Descriptor:
             self.fortran_order = False
             if items.has_key(DTYPE_ID):
                 self.dtype_str = ''.join(f[0] for f in items[DTYPE_ID])
-                print "Dtype string:",self.dtype_str
                 self.shape, self.fortran_order, self.dtype = self._dtype_unpack(self.dtype_str)
-                print self.dtype,self.fortran_order,self.shape
                 self.size = numpy.multiply.reduce(self.shape)
             else:
                 self._calcsize()
