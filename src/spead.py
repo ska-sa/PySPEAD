@@ -635,7 +635,7 @@ class Transmitter:
         logger.info('TX.end: Sending stream terminator')
         self.send_heap(heap)
         del(self.t) # Prevents any further activity
-            
+
 #  ____               _                
 # |  _ \ ___  ___ ___(_)_   _____ _ __ 
 # | |_) / _ \/ __/ _ \ \ \ / / _ \ '__|
@@ -648,11 +648,18 @@ def iterheaps(tport):
     from constituent packets, with packets having higher PAYLOAD_CNTs taking precedence.  Assemble heap's
     heap from the _PAYLOAD of each packet, ordered by PAYLOAD_CNT.  Finally, resolve all IDs with
     extension clauses, replacing them with binary strings from the heap.'''
-    heap = SpeadHeap()
+    heaps = {}
+     # keep track of our currently active heaps
     logger.info('iterheaps: Getting packets')
     for pkt in tport.iterpackets():
         logger.info('iterheaps: Packet with HEAP_CNT=%d' % (pkt.heap_cnt))
         if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterheaps:'))
+         # get the heap for this packet
+        heap_cnt = pkt.heap_cnt
+        if not heaps.has_key(heap_cnt):
+            heaps[heap_cnt] = SpeadHeap()
+            logger.info('iterheaps: Creating new heap for HEAP_CNT=%d. Currently %d active heaps.' % (heap_cnt,heaps.__len__()))
+        heap = heaps[heap_cnt]
         # Check if we have finished a heap
         try:
             heapdone = heap.add_packet(pkt) # If heap_len is set, we can know heap is done before next heap starts
@@ -665,8 +672,10 @@ def iterheaps(tport):
             if heap.is_valid: yield heap
             else: logger.warning('iterheaps: Invalid spead heap %d found (SpeadHeap.has_all_packets=%d)' % (heap.heap_cnt,heap.has_all_packets))
             logger.info('iterheaps: Starting new heap')
-            heap = SpeadHeap()
-            if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap
+            heaps.pop(heap_cnt)
+             # we are done with this heap...
+            #if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap
+             # packets should not be rejected as they are added to the heap identified by their internal count
     logger.info('iterheaps: Last packet in stream received, processing final heap.')
     logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
     heap.finalize()
