@@ -694,6 +694,12 @@ def iterheaps(tport):
     heap.finalize()
     logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
     if heap.is_valid: yield heap
+     # see if we have any floaters...
+    for heap in heaps.itervalues():
+        logger.info('iterheaps: Attempting to unpack stale heap %d' % heap.heap_cnt)
+        heap.finalize()
+        logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
+        if heap.is_valid: yield heap
     logger.info('iterheaps: Finished all heaps')
     return
 
