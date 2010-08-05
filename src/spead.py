@@ -19,6 +19,7 @@ logger = logging.getLogger('spead')
 # | |__| (_) | | | \__ \ || (_| | | | | |_\__ \
 #  \____\___/|_| |_|___/\__\__,_|_| |_|\__|___/
 
+MAX_CONCURRENT_HEAPS = 16
 UNRESERVED_OPTION = 2**12
 NAME_ID = 0x10
 DESCRIPTION_ID = 0x11
@@ -545,7 +546,7 @@ class TransportString:
                 self.offset += pkt.unpack(self.data[self.offset:])
                 # Check if this pkt has a stream terminator
                 if pkt.is_stream_ctrl_term:
-                    self.got_term_sig = True    
+                    self.got_term_sig = True
                     break
                 if DEBUG: logger.debug('TRANSPORTSTRING.iterpackets: Yielding packet, offset=%d/%d' % (self.offset, len(self.data)))
                 yield pkt
@@ -648,8 +649,11 @@ def iterheaps(tport):
     from constituent packets, with packets having higher PAYLOAD_CNTs taking precedence.  Assemble heap's
     heap from the _PAYLOAD of each packet, ordered by PAYLOAD_CNT.  Finally, resolve all IDs with
     extension clauses, replacing them with binary strings from the heap.'''
+    heap = SpeadHeap()
     heaps = {}
      # keep track of our currently active heaps
+    heap_times = {}
+     # keep track of when the first packet arrived for this heap in order to age things.
     logger.info('iterheaps: Getting packets')
     for pkt in tport.iterpackets():
         logger.info('iterheaps: Packet with HEAP_CNT=%d' % (pkt.heap_cnt))
@@ -657,7 +661,16 @@ def iterheaps(tport):
          # get the heap for this packet
         heap_cnt = pkt.heap_cnt
         if not heaps.has_key(heap_cnt):
+             # check if we have space...
+            while len(heaps) >= MAX_CONCURRENT_HEAPS:
+                pop_idx = [x for x in heaps.items() if x[1] == min(heaps.values())][0][0]
+                partial_heap = heaps.pop(pop_idx)
+                logger.info('iterheaps: Removing stale heap (and attempting unpack) with HEAP_CNT=%d (created at %s) to make space for new heaps.' % (pop_idx, time.ctime(heap_times.pop(pop_idx))))
+                partial_heap.finalize()
+                if partial_heap.is_valid: yield partial_heap
+                else: logger.warning('iterheaps: Invalid spead heap %d found (SpeadHeap.has_all_packets=%d)' % (pop_idx,partial_heap.has_all_packets))
             heaps[heap_cnt] = SpeadHeap()
+            heap_times[heap_cnt] = time.time()
             logger.info('iterheaps: Creating new heap for HEAP_CNT=%d. Currently %d active heaps.' % (heap_cnt,heaps.__len__()))
         heap = heaps[heap_cnt]
         # Check if we have finished a heap
