@@ -180,10 +180,14 @@ class TestDescriptor(unittest.TestCase):
 
 class TestItem(unittest.TestCase):
     def setUp(self):
+        self.i32 = S.Item(id=2**15+2**14, name='var', fmt='u\x00\x00\x20')
         self.i40 = S.Item(id=2**15+2**14, name='var')
         self.i64 = S.Item(id=2**15+2**14, name='var', fmt='f\x00\x00\x40')
         #self.u1  = S.Item(id=2**15+2**14, name='var', fmt=[('u',1)], shape=-1)
     def test_get_set_value(self):
+        self.i32.set_value(53)
+        self.assertEqual(self.i32._value[0][0], 53)
+        self.assertEqual(self.i32.get_value(), 53)
         self.i40.set_value(53)
         self.assertEqual(self.i40._value[0][0], 53)
         self.assertEqual(self.i40.get_value(), 53)
@@ -203,9 +207,13 @@ class TestItem(unittest.TestCase):
         self.i40.unset_changed()
         self.assertEqual(self.i40._changed, False)
     def test_to_from_value_string(self):
+        self.i32.set_value(5)
+        self.assertEqual(self.i32.to_value_string(), '\x00\x00\x00\x05')
+        self.i32.from_value_string('\x00'*5)
+        self.assertEqual(self.i32.get_value(), 0)
         self.i40.set_value(5)
         self.assertEqual(self.i40.to_value_string(), '\x00\x00\x00\x00\x05')
-        self.i40.from_value_string('\x00'*6)
+        self.i40.from_value_string('\x00'*5)
         self.assertEqual(self.i40.get_value(), 0)
         self.i64.set_value(6.28)
         self.assertEqual(self.i64.to_value_string(), '@\x19\x1e\xb8Q\xeb\x85\x1f')
