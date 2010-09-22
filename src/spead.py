@@ -225,7 +225,7 @@ class Descriptor:
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
         try:
-            val = unpack(self.format, s, cnt=self.size, offset=self._offset)
+            val = unpack(self.format, s[self._offset/8:], cnt=self.size, offset=self._offset%8)
         except ValueError, e:
             raise ValueError(''.join(e.args) + ': Could not unpack %s: fmt=%s, size=%d, _offset=%d, but length of binary string was %d' % (self.name, parsefmt(self.format), self.size, self._offset, len(s)))
         if self.shape == -1 or len(self.shape) != 0:
