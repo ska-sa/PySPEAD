@@ -210,17 +210,23 @@ int spead_heap_add_packet(SpeadHeap *heap, SpeadPacket *pkt) {
         heap->heap_cnt = pkt->heap_cnt;
         heap->head_pkt = pkt;
         heap->last_pkt = pkt;
-    } else { // We need to insert this packet in the correct order
+    } 
+    else { // We need to insert this packet in the correct order
         if (heap->heap_cnt != pkt->heap_cnt) return SPEAD_ERR;
         _pkt = heap->head_pkt;
         // Find the right slot to insert this pkt
-        while (_pkt->next != NULL && _pkt->next->payload_off < pkt->payload_off) {
+        if (pkt->payload_off < _pkt->payload_off) {
+         pkt->next = heap->head_pkt;
+         heap->head_pkt = pkt;
+        } else {
+          while (_pkt->next != NULL && _pkt->next->payload_off < pkt->payload_off) {
             _pkt = _pkt->next;
-        }
-        // Insert the pkt
-        pkt->next = _pkt->next;
-        _pkt->next = pkt;
-        if (pkt->next == NULL) heap->last_pkt = pkt;
+          }
+          // Insert the pkt
+          pkt->next = _pkt->next;
+          _pkt->next = pkt;
+          if (pkt->next == NULL) heap->last_pkt = pkt;
+        } // else if packet does not belong at head
     }
     if (pkt->heap_len != SPEAD_ERR) heap->heap_len = pkt->heap_len;
     heap->has_all_packets = SPEAD_ERR;

@@ -224,6 +224,7 @@ class Descriptor:
 
     def unpack(self, s):
         '''Convert a binary string into a value based on the format and shape of this Descriptor.'''
+        logger.debug("Using traditional unpack")
         try:
             val = unpack(self.format, s[self._offset/8:], cnt=self.size, offset=self._offset%8)
         except ValueError, e:
@@ -235,6 +236,7 @@ class Descriptor:
 
     def unpack_numpy(self,s):
         '''If our format string is numpy compatible, then convert string directly into numpy array.'''
+        logger.debug("Using numpy unpack") 
         val = numpy.fromstring(s, dtype=self.dtype, count=self.size).byteswap()
         val.shape = self.shape
         return val
@@ -604,9 +606,13 @@ class TransportUDPrx(BufferSocket):
         self.set_callback(callback)
         self.start(port, buffer_size)
     def iterpackets(self):
-        while self.is_running() or len(self.pkts) > 0:
-            if len(self.pkts) > 0: yield self.pkts.pop()
-            else: time.sleep(.01)
+        while self.is_running():
+            if len(self.pkts) > 0:
+                try:
+                    while True: yield self.pkts.pop()
+                except IndexError:
+                    pass # we have handled current packet queue
+            time.sleep(0.00001)
         logger.info('TRANSPORTUDPRX: Stream was shut down')
         return
 
@@ -656,7 +662,7 @@ def iterheaps(tport):
      # keep track of when the first packet arrived for this heap in order to age things.
     logger.info('iterheaps: Getting packets')
     for pkt in tport.iterpackets():
-        logger.info('iterheaps: Packet with HEAP_CNT=%d' % (pkt.heap_cnt))
+        logger.debug('iterheaps: Packet with HEAP_CNT=%d, HEAP_LEN=%d, PAYLOAD_LEN=%d, PAYLOAD_OFF=%d' % (pkt.heap_cnt, pkt.heap_len, pkt.payload_len, pkt.payload_off))
         if DEBUG: logger.debug(readable_speadpacket(pkt, show_payload=False, prepend='iterheaps:'))
          # get the heap for this packet
         heap_cnt = pkt.heap_cnt
