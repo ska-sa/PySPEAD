@@ -635,12 +635,17 @@ class Transmitter:
             logger.info('TX.send_heap: Sending heap packet %d' % (cnt))
             if DEBUG: logger.debug(readable_binpacket(p, prepend='TX.send_heap,pkt=%d:' % (cnt)))
             self.t.write(p)
-    def end(self):
-        '''Send a packet signalling the end of this stream.'''
+
+    def send_halt(self):
+        '''Send a halt packet without stopping the transmitter.'''
         heap = { HEAP_CNT_ID: (IMMEDIATEADDR, '\xff\xff\xff\xff\xff\xff'),
             STREAM_CTRL_ID: (IMMEDIATEADDR, pack(DEFAULT_FMT, ((STREAM_CTRL_TERM_VAL,),))) }
         logger.info('TX.end: Sending stream terminator')
         self.send_heap(heap)
+
+    def end(self):
+        '''Send a packet signalling the end of this stream.'''
+        self.send_halt()
         del(self.t) # Prevents any further activity
 
 #  ____               _                
@@ -695,12 +700,7 @@ def iterheaps(tport):
              # we are done with this heap...
             #if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap
              # packets should not be rejected as they are added to the heap identified by their internal count
-    logger.info('iterheaps: Last packet in stream received, processing final heap.')
-    logger.info('iterheaps: Heap %d completed, attempting to unpack heap' % heap.heap_cnt)
-    heap.finalize()
-    logger.info('iterheaps: SpeadHeap.is_valid=%d' % heap.is_valid)
-    if heap.is_valid: yield heap
-     # see if we have any floaters...
+    logger.info('iterheaps: Last packet in stream received, processing any stale heaps.')
     for heap in heaps.itervalues():
         logger.info('iterheaps: Attempting to unpack stale heap %d' % heap.heap_cnt)
         heap.finalize()
