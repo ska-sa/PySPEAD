@@ -687,7 +687,7 @@ int _spead_unpack_fmt(char *fmt, Py_ssize_t fmt_len, char *fmt_types, int *fmt_b
                     default: flag = 1; break;
                 }
                 break;
-            case 'c': if (fmt_bits[i] != 8) flag = 1; break;
+            case 'c': case 's': if (fmt_bits[i] != 8) flag = 1; break;
             case '0': // This isn't supported at this level--it must be accounted for at a higher level
             default: flag = 1; break;
         }
@@ -731,6 +731,11 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
     // Create our return tuple
     rv = PyTuple_New(cnt);
     if (rv == NULL) return NULL;
+    if (fmt_types[0] == 's') {
+     rv = PyTuple_New(1);
+     PyTuple_SET_ITEM(rv,0,PyString_FromStringAndSize(((char *)&data[0]),cnt));
+     return rv;
+    }
     for (j=0; j < cnt; j++) {
         tup = PyTuple_New(n_fmts);
         if (tup == NULL) return NULL;
@@ -772,7 +777,7 @@ PyObject *spead_unpack(PyObject *self, PyObject *args, PyObject *kwds) {
         }
         PyTuple_SET_ITEM(rv, j, tup);
     }
-    return rv;        
+    return rv;
 }
 
 PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
@@ -880,6 +885,7 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
                     }
                     break;
                 case 'c':
+                case 's':
                     if (PyString_AsStringAndSize(item2, &sval, &val_len) == -1 || sval == NULL || val_len == 0) {
                         flag = 1;
                         break;
