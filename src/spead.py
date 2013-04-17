@@ -674,7 +674,8 @@ def iterheaps(tport):
         if not heaps.has_key(heap_cnt):
              # check if we have space...
             while len(heaps) >= MAX_CONCURRENT_HEAPS:
-                pop_idx = [x for x in heaps.items() if x[1] == min(heaps.values())][0][0]
+                # choose the oldest stale heap to replace
+                pop_idx = [x for x in heap_times.items() if x[1] == min(heap_times.values())][0][0]
                 partial_heap = heaps.pop(pop_idx)
                 logger.info('iterheaps: Removing stale heap (and attempting unpack) with HEAP_CNT=%d (created at %s) to make space for new heaps.' % (pop_idx, time.ctime(heap_times.pop(pop_idx))))
                 partial_heap.finalize()
@@ -697,6 +698,7 @@ def iterheaps(tport):
             else: logger.warning('iterheaps: Invalid spead heap %d found (SpeadHeap.has_all_packets=%d)' % (heap.heap_cnt,heap.has_all_packets))
             logger.info('iterheaps: Starting new heap')
             heaps.pop(heap_cnt)
+            heap_times.pop(heap_cnt)
              # we are done with this heap...
             #if not pkt is None: heap.add_packet(pkt) # If pkt was rejected, add it to the next heap
              # packets should not be rejected as they are added to the heap identified by their internal count
