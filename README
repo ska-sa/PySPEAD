@@ -2,6 +2,9 @@ PySPEAD
 
 This is a fast and light Python implementation of the Streaming Protocol for the Exchange of Astronomical Data
 
+New in 0.5:
+    - Added experimental string handling using mkfmt(('s',8))
+
 ToDo:
     - Unpacking is now pretty quick, but for arrays, could we get one more speed-up by unpacking data directly into
       a numpy array, rather than to a tuple? 
