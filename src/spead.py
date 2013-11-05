@@ -232,6 +232,7 @@ class Descriptor:
         if self.shape == -1 or len(self.shape) != 0:
             val = numpy.array(val)
             if self.shape != -1: val.shape = self.shape
+        if self.format[0] == 's': val = val[0]
         return val
 
     def unpack_numpy(self,s):
