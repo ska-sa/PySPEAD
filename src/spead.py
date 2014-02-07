@@ -396,7 +396,7 @@ class ItemGroup:
         self.heap_cnt = 1  # We start heap_cnt at 1 b/c control packets have heap_cnt = 0
         self._items = {}
         self._names = {}
-        self._new_names = []
+        self._new_names = {}
     def add_item(self, *args, **kwargs):
         '''Add an Item to the group.  The state of this Item will be propagated through the heaps
         of this ItemGroup.  Arguments to this function are passed directly to the Item constructor.'''
@@ -405,7 +405,7 @@ class ItemGroup:
             item.id = UNRESERVED_OPTION + len(self._items)
             while self._items.has_key(item.id): item.id += 1
         self._items[item.id] = item
-        self._new_names.append(item.name)
+        self._new_names[item.name] = item
         self._update_keys()
     def _update_keys(self):
         '''Regenerate the self._names dictionary that maps Item names to the ids by which Items
@@ -436,12 +436,11 @@ class ItemGroup:
         if heap is None: heap = {}
         heap[HEAP_CNT_ID] = (IMMEDIATEADDR, pack(DEFAULT_FMT, ((self.heap_cnt,),)))
         self.heap_cnt += 1
-        # Process descriptors for any items that have been added. Since there can 
-        # be multiple ITEM_DESCRIPTORs, it will be a list that is specially handled.
+        # Switching back to dict based _new_names to avoid memory leaks from long running multiple updates.
+        # NOTE: The behaviour of the previous list approach is broken anyway as the new_name all resolve to a single ID
+        # that is provided by self._names. So essentially this was doing nothing.
         heap[DESCRIPTOR_ID] = []
-        while len(self._new_names) > 0:
-            id = self._names[self._new_names.pop()]
-            item = self._items[id]
+        for item in self._new_names.itervalues():
             if DEBUG: logger.debug('ITEMGROUP.get_heap: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
             heap[DESCRIPTOR_ID].append(item.to_descriptor_string())
         # Add entries for any items that have changed
