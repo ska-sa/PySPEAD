@@ -440,9 +440,14 @@ class ItemGroup:
         # NOTE: The behaviour of the previous list approach is broken anyway as the new_name all resolve to a single ID
         # that is provided by self._names. So essentially this was doing nothing.
         heap[DESCRIPTOR_ID] = []
+        sent_names = []
         for item in self._new_names.itervalues():
             if DEBUG: logger.debug('ITEMGROUP.get_heap: Adding descriptor for id=%d (name=%s)' % (item.id, item.name))
             heap[DESCRIPTOR_ID].append(item.to_descriptor_string())
+            sent_names.append(item.name)
+        for name in sent_names: self._new_names.pop(name)
+         # we explicitly remove the names we have sent, rather than dumping the whole dict, just in case
+         # things get modified as we iterate.
         # Add entries for any items that have changed
         for item in self._items.itervalues():
             if not item.has_changed(): continue
