@@ -32,6 +32,8 @@ ID_ID = 0x14
 DTYPE_ID = 0x15
 ADDRNULL = '\x00'*_spead.ADDRLEN
 DEBUG = False
+ADDRSIZE = _spead.ADDRSIZE
+ITEMSIZE = _spead.ITEMSIZE
 
 #def pack(fmt, *args): return _spead.pack(fmt, args)
 
