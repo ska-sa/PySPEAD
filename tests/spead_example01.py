@@ -1,9 +1,13 @@
-import numpy, spead, os, logging
+import numpy
+import spead64_48 as spead
+import os
+import logging
 
 logging.basicConfig(level=logging.DEBUG)
 DIM = 100
 
 FILENAME = 'junkspeadfile'
+
 
 def receive():
     print 'RX: Initializing...'
@@ -20,6 +24,7 @@ def receive():
             print '            Shape: ', item.shape
             print '            Value: ', ig[name]
     print 'RX: Done.'
+
 
 def transmit():
     print 'TX: Initializing...'

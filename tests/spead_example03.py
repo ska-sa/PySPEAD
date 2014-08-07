@@ -1,10 +1,15 @@
-import numpy, spead, logging, sys
+import numpy
+import spead64_48 as spead
+import logging
+import sys
 
 logging.basicConfig(level=logging.INFO)
 PORT = 8888
 
+
 def receive():
     print 'RX: Initializing...'
+
     t = spead.TransportUDPrx(PORT)
     ig = spead.ItemGroup()
     for heap in spead.iterheaps(t):
@@ -19,6 +24,7 @@ def receive():
             print '            Shape: ', item.shape
             print '            Value: ', ig[name]
     print 'RX: Done.'
+
 
 def transmit():
     print 'TX: Initializing...'
@@ -41,6 +47,9 @@ def transmit():
     tx.end()
     print 'TX: Done.'
 
-if sys.argv[-1] == 'tx': transmit()
-elif sys.argv[-1] == 'rx': receive()
-else: raise ValueError('Argument must be rx or tx')
+if sys.argv[-1] == 'tx':
+    transmit()
+elif sys.argv[-1] == 'rx':
+    receive()
+else:
+    raise ValueError('Argument must be rx or tx')

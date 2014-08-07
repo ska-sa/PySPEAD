@@ -1,4 +1,8 @@
-import numpy, spead, os, logging, sys
+import numpy
+import spead64_48 as spead
+import logging
+import sys
+
 
 def receive():
     print 'RX: Initializing...'
@@ -15,6 +19,7 @@ def receive():
             print '            Shape: ', item.shape
             print '            Value: ', ig[name]
     print 'RX: Done.'
+
 
 def transmit():
     #print 'TX: Initializing...'
@@ -34,9 +39,10 @@ def transmit():
     tx.end()
     #print 'TX: Done.'
 
-if sys.argv[-1] == 'tx': transmit()
+if sys.argv[-1] == 'tx':
+    transmit()
 elif sys.argv[-1] == 'rx':
     logging.basicConfig(level=logging.INFO)
     receive()
-else: raise ValueError('Argument must be rx or tx')
-
+else:
+    raise ValueError('Argument must be rx or tx')
