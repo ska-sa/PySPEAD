@@ -17,11 +17,11 @@
 #endif
 #endif
 
-// Flavor constants
+// Flavour constants
 #define SPEAD_MAGIC                 0x53
 #define SPEAD_VERSION               4
 #define SPEAD_ITEMSIZE              64
-#define SPEAD_ADDRSIZE              40
+// SPEAD_ADDRSIZE - now a define passed by the Python setup script, enabling different flavours to be built.
 #define SPEAD_HEAP_ADDR_WIDTH     (SPEAD_ADDRSIZE/8)
 #define SPEAD_ITEM_PTR_WIDTH	  ((SPEAD_ITEMSIZE-SPEAD_ADDRSIZE)/8)
 #define SPEAD_ITEMLEN             (SPEAD_ITEMSIZE/8)

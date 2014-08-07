@@ -605,58 +605,58 @@ static PyObject * BsockObject_is_running(BsockObject *self) {
 // Bind methods to object
 static PyMethodDef BsockObject_methods[] = {
     {"start", (PyCFunction)BsockObject_start, METH_VARARGS,
-        "start(port)\nBegin listening for UDP packets on the specified port."},
+     "start(port)\nBegin listening for UDP packets on the specified port."},
     {"stop", (PyCFunction)BsockObject_stop, METH_NOARGS,
-        "stop()\nHalt listening for UDP packets."},
+     "stop()\nHalt listening for UDP packets."},
     {"set_callback", (PyCFunction)BsockObject_set_callback, METH_VARARGS,
-        "set_callback(cbk)\nSet a callback function for output data from a BufferSocket.  If cbk is a CollateBuffer, a special handler is used that feeds data into the CollateBuffer without entering back into Python (for speed).  Otherwise, cbk should be a function that accepts a single argument: a binary string containing packet data."},
+     "set_callback(cbk)\nSet a callback function for output data from a BufferSocket.  If cbk is a CollateBuffer, a special handler is used that feeds data into the CollateBuffer without entering back into Python (for speed).  Otherwise, cbk should be a function that accepts a single argument: a binary string containing packet data."},
     {"unset_callback", (PyCFunction)BsockObject_unset_callback, METH_NOARGS,
-        "unset_callback()\nReset the callback to the default."},
+     "unset_callback()\nReset the callback to the default."},
     {"is_running", (PyCFunction)BsockObject_is_running, METH_NOARGS,
-        "is_running()\nReturn 1 if receiver is running, 0 otherwise."},
+     "is_running()\nReturn 1 if receiver is running, 0 otherwise."},
     {NULL}  // Sentinel
 };
 
 PyTypeObject BsockType = {
     PyObject_HEAD_INIT(NULL)
-    0,                         /*ob_size*/
-    "_spead.BufferSocket", /*tp_name*/
-    sizeof(BsockObject), /*tp_basicsize*/
-    0,                         /*tp_itemsize*/
-    (destructor)BsockObject_dealloc, /*tp_dealloc*/
-    0,                         /*tp_print*/
-    0,                         /*tp_getattr*/
-    0,                         /*tp_setattr*/
-    0,                         /*tp_compare*/
-    0,                         /*tp_repr*/
-    0,                         /*tp_as_number*/
-    0,                         /*tp_as_sequence*/
-    0,                         /*tp_as_mapping*/
-    0,                         /*tp_hash */
-    0,                         /*tp_call*/
-    0,                         /*tp_str*/
-    0,                         /*tp_getattro*/
-    0,                         /*tp_setattro*/
-    0,                         /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,        /*tp_flags*/
-    "A ring-buffered, multi-threaded socket interface for holding Spead packets.  BufferSocket(pkt_count=128)",       /* tp_doc */
-    0,                     /* tp_traverse */
-    0,                     /* tp_clear */
-    0,                     /* tp_richcompare */
-    0,                     /* tp_weaklistoffset */
-    0,                     /* tp_iter */
-    0,                     /* tp_iternext */
-    BsockObject_methods,     /* tp_methods */
-    0,                       /* tp_members */
-    0,                         /* tp_getset */
-    0,                         /* tp_base */
-    0,                         /* tp_dict */
-    0,                         /* tp_descr_get */
-    0,                         /* tp_descr_set */
-    0,                         /* tp_dictoffset */
-    (initproc)BsockObject_init,      /* tp_init */
-    0,                         /* tp_alloc */
-    BsockObject_new,       /* tp_new */
+    0,                          /* ob_size */
+    "_spead.BufferSocket",      /* tp_name */
+    sizeof(BsockObject),        /* tp_basicsize */
+    0,                          /* tp_itemsize */
+    (destructor)BsockObject_dealloc, /* tp_dealloc */
+    0,                          /* tp_print */
+    0,                          /* tp_getattr */
+    0,                          /* tp_setattr */
+    0,                          /* tp_compare */
+    0,                          /* tp_repr */
+    0,                          /* tp_as_number */
+    0,                          /* tp_as_sequence */
+    0,                          /* tp_as_mapping */
+    0,                          /* tp_hash  */
+    0,                          /* tp_call */
+    0,                          /* tp_str */
+    0,                          /* tp_getattro */
+    0,                          /* tp_setattro */
+    0,                          /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,        /* tp_flags */
+    "A ring-buffered, multi-threaded socket interface for holding Spead packets. BufferSocket(pkt_count=128)", /* tp_doc */
+    0,                          /* tp_traverse */
+    0,                          /* tp_clear */
+    0,                          /* tp_richcompare */
+    0,                          /* tp_weaklistoffset */
+    0,                          /* tp_iter */
+    0,                          /* tp_iternext */
+    BsockObject_methods,        /* tp_methods */
+    0,                          /* tp_members */
+    0,                          /* tp_getset */
+    0,                          /* tp_base */
+    0,                          /* tp_dict */
+    0,                          /* tp_descr_get */
+    0,                          /* tp_descr_set */
+    0,                          /* tp_dictoffset */
+    (initproc)BsockObject_init, /* tp_init */
+    0,                          /* tp_alloc */
+    BsockObject_new,            /* tp_new */
 };
 
 /*___                       _   __  __           _       _      
@@ -959,4 +959,3 @@ PyMODINIT_FUNC init_spead(void) {
     PyModule_AddIntConstant(m, "ADDRSIZE", SPEAD_ADDRSIZE);
     PyModule_AddIntConstant(m, "FMT_LEN", SPEAD_FMT_LEN);
 }
-
