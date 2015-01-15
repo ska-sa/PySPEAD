@@ -747,7 +747,6 @@ class TransportUDPtx:
         self._tx_ip_port = (ip, port)
         self._rate = rate
         self._last_time = time.time()
-        self._carry_wait = 0.0
 
     def write(self, data):
         self._udp_out.sendto(data, self._tx_ip_port)

@@ -3,7 +3,7 @@ import spead64_48 as spead
 import logging
 import sys
 
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 PORT = 8888
 
 
@@ -28,7 +28,7 @@ def receive():
 
 def transmit():
     print 'TX: Initializing...'
-    tx = spead.Transmitter(spead.TransportUDPtx('127.0.0.1', PORT))
+    tx = spead.Transmitter(spead.TransportUDPtx('127.0.0.1', PORT, rate=1e9))
     ig = spead.ItemGroup()
 
     ig.add_item(name='Var1', description='Description for Var1',
@@ -38,9 +38,9 @@ def transmit():
     ig['Var1'] = (4,5,6)
     tx.send_heap(ig.get_heap())
 
+    data = numpy.arange(100000*4000).astype(numpy.uint32); data.shape = (100000,4000)
     ig.add_item(name='Var2', description='Description for Var2',
-        shape=[100,100], fmt=spead.mkfmt(('u',32)))
-    data = numpy.arange(100*100); data.shape = (100,100)
+        shape=[100000,4000], ndarray=data)
     ig['Var2'] = data
     tx.send_heap(ig.get_heap())
 
