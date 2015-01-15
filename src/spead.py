@@ -730,12 +730,40 @@ class TransportFile(file):
 
 
 class TransportUDPtx:
-    def __init__(self, ip, port):
+    def __init__(self, ip, port, rate=None):
+        """Initialize a UDP transport. This does not handle multicast subscription.
+
+        Parameters
+        ----------
+        ip : str
+            IP address
+        port : int
+            Port number
+        rate : float, optional
+            Maximum transmission rate, in bits per second. If None, packets are
+            send as fast as possible.
+        """
         self._udp_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._tx_ip_port = (ip, port)
+        self._rate = rate
+        self._last_time = time.time()
+        self._carry_wait = 0.0
 
     def write(self, data):
         self._udp_out.sendto(data, self._tx_ip_port)
+        if self._rate is not None:
+            now = time.time()
+            target = self._last_time + len(data) * 8.0 / self._rate
+            if target > now:
+                # If we're only slightly early, don't bother sleeping, but
+                # still update _last_time. This will carry over the sleep
+                # until we've accumulated enough that we can sleep reasonably
+                # reliably.
+                if target - now > 1e-2:
+                    time.sleep(target - now)
+                self._last_time = target
+            else:
+                self._last_time = now
 
 
 class TransportUDPrx(_spead.BufferSocket):
