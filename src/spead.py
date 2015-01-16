@@ -162,7 +162,7 @@ def readable_heap(heap, prepend=''):
                 fmt, cnt = ITEM[name]['FMT'], ITEM[name]['CNT']
                 val = _spead.unpack(fmt, heap[id][1], cnt=cnt)
                 try:
-                    while type(val) != str and len(val) == 1:
+                    while not isinstance(val, str) and len(val) == 1:
                         val = val[0]
                 except TypeError:
                     pass
@@ -209,9 +209,9 @@ class Descriptor:
             self.dtype = None
             self.fortran_order = False
             if ndarray is not None:
-                if type(ndarray) == numpy.ndarray or (type(ndarray) == type(()) and len(ndarray) == 2):
+                if isinstance(ndarray, numpy.ndarray) or (isinstance(ndarray, tuple) and len(ndarray) == 2):
                     self.dtype_str = self._dtype_pack(ndarray)
-                    self.shape = ndarray.shape if type(ndarray) == numpy.ndarray else ndarray[1]
+                    self.shape = ndarray.shape if isinstance(ndarray, numpy.ndarray) else ndarray[1]
                     self.size = numpy.multiply.reduce(self.shape)
                 else:
                     raise TypeError('The specified ndarray is not a tuple (dtype,shape) or an array '
@@ -221,7 +221,7 @@ class Descriptor:
 
     def _dtype_pack(self, ndarray):
         """Generate a numpy compatible description string from the specified numpy array."""
-        if type(ndarray) == type(()):
+        if isinstance(ndarray, tuple):
             d = {'shape': ndarray[1],
                  'fortran_order': False,
                  'descr': numpy.lib.format.dtype_to_descr(ndarray[0])}
@@ -399,7 +399,7 @@ class Item(Descriptor):
     into a binary string.  An Item also keeps track of when its value has changed."""
     def __init__(self, name='', id=None, description='',
                  shape=[], fmt=DEFAULT_FMT, from_string=None, ndarray=None, init_val=None):
-        if init_val is not None and type(init_val) == numpy.ndarray and shape == [] and fmt == DEFAULT_FMT:
+        if init_val is not None and isinstance(init_val, numpy.ndarray) and shape == [] and fmt == DEFAULT_FMT:
             ndarray = init_val
             # if we can, setup our shape and format from the initial value.
             # Honour any override from the user in terms of shape and format.
@@ -694,7 +694,7 @@ class TransportFile(file):
     def __init__(self, *args, **kwargs):
         self._file = None
         # Allow for an open file (like sys.stdin or sys.stdout) to be in the arguments
-        if type(args[0]) == file:
+        if isinstance(args[0], file):
             self._file = args[0]
         else:
             file.__init__(self, *args, **kwargs)
