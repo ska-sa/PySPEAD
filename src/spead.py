@@ -269,7 +269,7 @@ class Descriptor:
 
     def pack_numpy(self, val):
         order = 'F' if self.fortran_order else 'C'
-        # make sure we have a valid array of with the correct layout
+        # make sure we have a valid array with the correct layout
         val = numpy.array(val, copy=False, order=order)
         return val.byteswap().data.__str__()
 
