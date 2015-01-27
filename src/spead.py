@@ -213,6 +213,8 @@ class Descriptor:
                     self.dtype_str = self._dtype_pack(ndarray)
                     self.shape = ndarray.shape if isinstance(ndarray, numpy.ndarray) else ndarray[1]
                     self.size = numpy.multiply.reduce(self.shape)
+                    if isinstance(ndarray, numpy.ndarray):
+                        self.fortran_order = ndarray.flags.f_contiguous and not ndarray.flags.c_contiguous
                 else:
                     raise TypeError('The specified ndarray is not a tuple (dtype,shape) or an array '
                                     'of type numpy.ndarray (it has type: ' + str(type(ndarray)) + ')')
@@ -266,8 +268,9 @@ class Descriptor:
         return ret
 
     def pack_numpy(self, val):
-        val = numpy.array(val)
-         # make sure we have a valid array
+        order = 'F' if self.fortran_order else 'C'
+        # make sure we have a valid array of with the correct layout
+        val = numpy.array(val, copy=False, order=order)
         return val.byteswap().data.__str__()
 
     def unpack(self, s):
@@ -292,7 +295,7 @@ class Descriptor:
         """If our format string is numpy compatible, then convert string directly into numpy array."""
         logger.debug("Using numpy unpack")
         val = numpy.fromstring(s, dtype=self.dtype, count=self.size).byteswap()
-        val.shape = self.shape
+        val = numpy.reshape(val, self.shape, 'F' if self.fortran_order else 'C')
         return val
 
     #def resolve_ids(self, id_dict={}):
