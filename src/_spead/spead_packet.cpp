@@ -66,7 +66,7 @@ void spead_copy_bits(char *data, char *val, int off, int n_bits) {
         // For the rest, can just do an 8b realignment in the copy
         shift = voff - off;
         v = (shift < 0) ? val-1 : val;
-        shift %= 8;
+        shift = ((unsigned int) shift) % 8;
         for (i=1; i < last_byte; i++) { data[i] = SPEAD_U8_ALIGN(v+i, shift); }
     }
 }
