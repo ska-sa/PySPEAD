@@ -415,6 +415,8 @@ class Item(Descriptor):
 
     def set_value(self, v):
         """Directly set the value of this Item to the provided value, and mark this Item as changed."""
+        if v is None:
+            raise ValueError('Cannot explicitly set a value of None')
         if self.size != -1 and len(self.shape) == 0:
             v = (v,)
             if calcdim(self.format) == 1:
@@ -429,9 +431,12 @@ class Item(Descriptor):
         else:
             self._value, self._changed = self.unpack(s), True
 
-    def get_value(self):
-        """Directly return the value of this Item."""
+    def get_value(self, default=None):
+        """Directly return the value of this Item. If the value has never
+        been set, returns `default`."""
         v = self._value
+        if v is None:
+            return default
         if self.shape != -1 and len(self.shape) == 0:
             if calcdim(self.format) == 1:
                 v = [x[0] for x in v]

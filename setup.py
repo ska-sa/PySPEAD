@@ -39,4 +39,5 @@ setup(name='spead',
 
       ],
       scripts=glob.glob('scripts/*'),
+      install_requires=['numpy'],
       )
