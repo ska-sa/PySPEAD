@@ -96,11 +96,11 @@ dissect_spead(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
          // get the number of items in this header
         offset = 8;
         for (i=0; i < no_items; i++) {
-         item_sub_item = proto_tree_add_item(items_tree, hf_spead_item_id, tvb, offset+1, 2, FALSE);
+         item_sub_item = proto_tree_add_item(items_tree, hf_spead_item_id, tvb, offset+0, 2, FALSE);
          item_tree = proto_item_add_subtree(item_sub_item, ett_item);
          proto_tree_add_uint_format(item_tree, hf_spead_item_mode, tvb, offset, 1, tvb_get_guint8(tvb,7),
         "Item Adress Mode: %s", (tvb_get_guint8(tvb,offset) & 0x80) ? "Immediate" : "Absolute");
-         proto_tree_add_item(item_tree, hf_spead_item_val, tvb, offset+3, 5, FALSE);
+         proto_tree_add_item(item_tree, hf_spead_item_val, tvb, offset+2, 6, FALSE);
          offset+=8;
         }
 
@@ -148,5 +148,5 @@ proto_reg_handoff_spead(void)
     static dissector_handle_t spead_handle;
 
     spead_handle = create_dissector_handle(dissect_spead, proto_spead);
-    dissector_add("udp.port", SPEAD_PORT, spead_handle);
+    dissector_add_uint("udp.port", SPEAD_PORT, spead_handle);
 }

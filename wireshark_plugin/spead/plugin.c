@@ -1,29 +1,31 @@
 /*
- * Do not modify this file.
+ * Do not modify this file. Changes will be overwritten.
  *
- * It is created automatically by Makefile or Makefile.nmake.
+ * Generated automatically from ../../tools/make-dissector-reg.py.
  */
 
-#ifdef HAVE_CONFIG_H
-# include "config.h"
-#endif
+#include "config.h"
 
 #include <gmodule.h>
 
 #include "moduleinfo.h"
 
+/* plugins are DLLs */
+#define WS_BUILD_DLL
+#include "ws_symbol_export.h"
+
 #ifndef ENABLE_STATIC
-G_MODULE_EXPORT const gchar version[] = VERSION;
+WS_DLL_PUBLIC_NOEXTERN const gchar version[] = VERSION;
 
 /* Start the functions we need for the plugin stuff */
 
-G_MODULE_EXPORT void
+WS_DLL_PUBLIC_NOEXTERN void
 plugin_register (void)
 {
   {extern void proto_register_spead (void); proto_register_spead ();}
 }
 
-G_MODULE_EXPORT void
+WS_DLL_PUBLIC_NOEXTERN void
 plugin_reg_handoff(void)
 {
   {extern void proto_reg_handoff_spead (void); proto_reg_handoff_spead ();}
