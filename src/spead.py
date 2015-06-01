@@ -212,7 +212,7 @@ class Descriptor:
                 if isinstance(ndarray, numpy.ndarray) or (isinstance(ndarray, tuple) and len(ndarray) == 2):
                     self.dtype_str = self._dtype_pack(ndarray)
                     self.shape = ndarray.shape if isinstance(ndarray, numpy.ndarray) else ndarray[1]
-                    self.size = int(numpy.multiply.reduce(self.shape))
+                    self.size = int(numpy.product(self.shape))
                     if isinstance(ndarray, numpy.ndarray):
                         self.fortran_order = ndarray.flags.f_contiguous and not ndarray.flags.c_contiguous
                 else:
@@ -384,7 +384,7 @@ class Descriptor:
             if DTYPE_ID in items.keys():
                 self.dtype_str = ''.join(f[0] for f in items[DTYPE_ID])
                 self.shape, self.fortran_order, self.dtype = self._dtype_unpack(self.dtype_str)
-                self.size = int(numpy.multiply.reduce(self.shape))
+                self.size = int(numpy.product(self.shape))
             else:
                 self._calcsize()
             self.name = ''.join([f[0] for f in items[NAME_ID]])
