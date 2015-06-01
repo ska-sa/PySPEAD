@@ -811,8 +811,7 @@ PyObject *spead_pack(PyObject *self, PyObject *args, PyObject *kwds) {
         PyErr_Format(PyExc_ValueError, "data does not match format");
         return NULL;
     }
-    tot_bytes = cnt * tot_fmt_bits / 8;  // 8 bits per byte
-    if (offset != 0) tot_bytes += 1;
+    tot_bytes = (cnt * tot_fmt_bits + offset + 7) / 8;  // 8 bits per byte
     //printf("Data has length %d\n", cnt);
     //printf("Allocating %d bytes\n", tot_bytes);
     rv = PyString_FromStringAndSize(NULL, tot_bytes);
