@@ -11,6 +11,7 @@ import socket
 import numpy
 import logging
 import time
+from collections import deque
 from numpy.lib.utils import safe_eval
 import _spead
 
@@ -776,9 +777,9 @@ class TransportUDPtx:
 class TransportUDPrx(_spead.BufferSocket):
     def __init__(self, port, pkt_count=128, buffer_size=0):
         _spead.BufferSocket.__init__(self, pkt_count)
-        self.pkts = []
+        self.pkts = deque()
         def callback(pkt):
-            self.pkts.insert(0, pkt)
+            self.pkts.appendleft(pkt)
         self.set_callback(callback)
         self.start(port, buffer_size)
 

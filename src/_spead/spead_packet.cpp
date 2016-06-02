@@ -1,3 +1,4 @@
+#include <string.h>
 #include "include/spead_packet.h"
 
 // Return data at the specified offset (in bits) and # of bits as
@@ -175,6 +176,7 @@ void spead_heap_init(SpeadHeap *heap) {
     heap->is_valid = 0;
     heap->heap_cnt = SPEAD_ERR;
     heap->heap_len = SPEAD_ERR;
+    heap->received_len = 0;
     heap->has_all_packets = SPEAD_ERR;
     heap->head_pkt = NULL;
     heap->last_pkt = NULL;
@@ -213,22 +215,29 @@ int spead_heap_add_packet(SpeadHeap *heap, SpeadPacket *pkt) {
     } 
     else { // We need to insert this packet in the correct order
         if (heap->heap_cnt != pkt->heap_cnt) return SPEAD_ERR;
-        _pkt = heap->head_pkt;
-        // Find the right slot to insert this pkt
-        if (pkt->payload_off < _pkt->payload_off) {
-         pkt->next = heap->head_pkt;
-         heap->head_pkt = pkt;
+        if (pkt->payload_off >= heap->last_pkt->payload_off) {
+            // Fast path: in-order packet gets added to the tail
+            heap->last_pkt->next = pkt;
+            heap->last_pkt = pkt;
         } else {
-          while (_pkt->next != NULL && _pkt->next->payload_off < pkt->payload_off) {
-            _pkt = _pkt->next;
-          }
-          // Insert the pkt
-          pkt->next = _pkt->next;
-          _pkt->next = pkt;
-          if (pkt->next == NULL) heap->last_pkt = pkt;
-        } // else if packet does not belong at head
+            _pkt = heap->head_pkt;
+            // Find the right slot to insert this pkt
+            if (pkt->payload_off < _pkt->payload_off) {
+                pkt->next = heap->head_pkt;
+                heap->head_pkt = pkt;
+            } else {
+                while (_pkt->next != NULL && _pkt->next->payload_off < pkt->payload_off) {
+                    _pkt = _pkt->next;
+                }
+                // Insert the pkt
+                pkt->next = _pkt->next;
+                _pkt->next = pkt;
+                if (pkt->next == NULL) heap->last_pkt = pkt;
+            } // else if packet does not belong at head
+        }
     }
     if (pkt->heap_len != SPEAD_ERR) heap->heap_len = pkt->heap_len;
+    heap->received_len += pkt->payload_len;
     heap->has_all_packets = SPEAD_ERR;
     return spead_heap_got_all_packets(heap);
 }
@@ -238,6 +247,10 @@ int spead_heap_got_all_packets(SpeadHeap *heap) {
     if (heap->heap_len == SPEAD_ERR || pkt == NULL) return 0;  // Don't compute if we can't know the answer
     if (heap->has_all_packets != SPEAD_ERR) return heap->has_all_packets; // Don't recompute if we do know the answer
     heap->has_all_packets = 0;
+    // If we haven't received as much payload as we're expecting, we're not
+    // done. If we have, we still need to check the actual packets because
+    // there might be duplicates.
+    if (heap->received_len < heap->heap_len) return 0;
     while (pkt->next != NULL) {
         if (pkt->payload_off + pkt->payload_len != pkt->next->payload_off) return 0;
         pkt = pkt->next;
@@ -313,20 +326,24 @@ int spead_heap_finalize(SpeadHeap *heap) {
                     if (item->val == NULL) return SPEAD_ERR;
                     // Dig through the payloads to retrieve item value
                     pkt2 = heap->head_pkt;
-                    for (o=0; o < item->len; o++) {
+                    o = 0;
+                    while (o < item->len) {
                         while (pkt2 != NULL && (pkt2->payload_off + pkt2->payload_len <= off + o)) {
                             pkt2 = pkt2->next;
                         }
                         // If packet with relevant data is missing, fill with zeros and mark invalid
                         if (pkt2 == NULL || pkt2->payload_off > off + o) {
                             //printf("Copying value[%d] = 00 (missing)\n", o);
-                            item->val[o] = '\x00';
+                            int64_t end = (pkt2 == NULL) ? item->len : pkt2->payload_off - off;
+                            memset(&item->val[o], 0, end - o);
                             item->is_valid = 0;
+                            o = end;
                         } else {
-                            item->val[o] = pkt2->payload[off + o - pkt2->payload_off];
-                            //printf("o=%d, off=%d, payload_off=%d, index=%d\n",
-                            //    o, off, pkt2->payload->offset, off + o - pkt2->payload->offset);
-                            //printf("Copying value[%d] = %02x\n", o, (uint8_t)item->val[o]);
+                            int64_t end = pkt2->payload_off + pkt2->payload_len - off;
+                            if (item->len < end)
+                                end = item->len;
+                            memcpy(&item->val[o], &pkt2->payload[off + o - pkt2->payload_off], end - o);
+                            o = end;
                         }
                     }
                 }

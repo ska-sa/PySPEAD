@@ -137,6 +137,8 @@ typedef struct {
     int is_valid;
     int64_t heap_cnt;
     int64_t heap_len;
+    // Total bytes of payload received (possibly including duplicated packets)
+    int64_t received_len;
     int has_all_packets;
     SpeadPacket *head_pkt;
     SpeadPacket *last_pkt;
